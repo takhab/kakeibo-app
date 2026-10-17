@@ -44,6 +44,16 @@ st.markdown("""
         color: #00796B;
         font-weight: bold;
     }
+    /* ももちゃんウェルカムカードのスタイル */
+    .welcome-card {
+        background: linear-gradient(135deg, #FF9AA2 0%, #FFB7B2 50%, #FFDAC1 100%);
+        padding: 25px;
+        border-radius: 20px;
+        color: white;
+        text-align: center;
+        box-shadow: 0px 6px 12px rgba(0,0,0,0.1);
+        margin-bottom: 25px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,39 +86,43 @@ def play_sound(sound_type):
         components.html(sound_code, height=0)
 
 # ====== 🔒 パスワード認証の仕組み ======
-# セッション状態に認証フラグがない場合は False に初期化
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
-# まだ認証されていない場合は、パスワード入力画面だけを表示して止める
 if not st.session_state.authenticated:
     st.title("🔒 けいびの おまわりさん（パスワード認証）")
     st.write("このお部屋に入るには、ひみつの合言葉が必要だよ！")
     
-    # ユーザーに入力を求める（文字が隠れるタイプ）
     input_pass = st.text_input("ひみつのあいことばをいれてね", type="password")
     
     if st.button("とびらを開ける！"):
-        # Streamlit Cloudの Secrets からパスワードを取得（設定されていない場合はデフォルト "kakeibo123"）
         correct_password = st.secrets.get("app_password", "kakeibo123")
         
         if input_pass == correct_password:
             st.session_state.authenticated = True
             play_sound("success")
             st.success("🎉 合言葉が正解したよ！中に入るね...")
-            st.rerun() # 画面を再読み込みしてメイン画面へ
+            st.rerun()
         else:
             st.error("❌ あいことばがちがうみたい。もう一度ためしてね！")
             
-    # パスワードが通るまでは、これより下のコードを実行せずにここでストップする
     st.stop()
 
 
 # ==========================================
-# 🔓 以下、パスワード認証を突破したあとのメインアプリ
+# 🔓 パスワード認証クリア後のメインアプリ（ももちゃん歓迎！）
 # ==========================================
 
-st.title("🎨 ぽかぽか かけいぼ ダッシュボード 🧸🎵")
+# 🌸 ももちゃん専用のウェルカムバナー・演出
+st.markdown("""
+<div class="welcome-card">
+    <h1>👑 ももちゃん、おかえりなさい！ 🌸</h1>
+    <p style="font-size: 18px; font-weight: bold; margin: 0;">
+        今日もすてきな、可愛いももちゃんのために作ったよ！✨<br>
+        おかいもの帳をぽんっと入れて、楽しく整理しよっ♪🧸🍓
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
@@ -146,7 +160,7 @@ def get_all_existing_categories():
 
 # ====== 管理者・AI育成メニュー ======
 with st.expander("🛠️ AIをそだてる（管理メニュー）"):
-    st.write("みんなの修正したデータを元にして、AIさんをもっとかしこくするよ！")
+    st.write("ももちゃんが直したデータを元にして、AIさんをもっとかしこくするよ！")
     
     if os.path.exists(TRAIN_DATA_FILE):
         df_current_train = pd.read_csv(TRAIN_DATA_FILE)
@@ -173,7 +187,7 @@ with st.expander("🛠️ AIをそだてる（管理メニュー）"):
                 pickle.dump(vec, f)
                 
             play_sound("success")
-            st.success("🎉 AIさんが新しく生まれ変わったよ！すごいね！")
+            st.success("🎉 AIさんが新しく生まれ変わったよ！すごいね、ももちゃん！")
         except Exception as e:
             st.error(f"エラーが起きたみたい: {e}")
 
@@ -230,7 +244,7 @@ if uploaded_files:
 
             df["AI予測カテゴリ"] = model.predict(X_new)
             
-            st.write("✨ **AIさんのよそうけっかだよ！まちがってたら、おててで直してね👇**")
+            st.write("✨ **AIさんのよそうけっかだよ！まちがってたら、ももちゃんがおててで直してね👇**")
             
             base_categories = get_all_existing_categories()
             select_options = base_categories + ["➕ 新しいなまえをじゆうに作る"]
@@ -255,7 +269,7 @@ if uploaded_files:
                 custom_input = st.text_input("新しいなまえ：", placeholder="例：おもちゃ、たからもの など")
                 if custom_input:
                     edited_df.loc[new_cat_mask, "AI予測カテゴリ"] = custom_input
-                    st.success(f"🍀 「{custom_input}」にぜんぶ書き換えたよ！")
+                    st.success(f"🍀 「{custom_input}」にぜんぶ書き換えたよ、ももちゃん！")
 
             col_btn1, col_btn2 = st.columns(2)
             
@@ -271,7 +285,7 @@ if uploaded_files:
                     
                     worksheet.append_rows(df_to_save.values.tolist())
                     play_sound("success")
-                    st.success(f"🍎 {len(df_to_save)} このでーたを、きれいにしまったよ！やったね！")
+                    st.success(f"🍎 {len(df_to_save)} このでーたを、きれいにしまったよ！さすが生徒思いのももちゃん！")
 
             with col_btn2:
                 if st.button("🧠 ② AIさんに「これが正解だよ」とおしえてあげる"):
@@ -302,11 +316,11 @@ if uploaded_files:
                         pickle.dump(vec_new, f)
                         
                     play_sound("success")
-                    st.success(f"🌟 おしえてくれてありがとう！AIさんがまたかしこくなったよ！（合計: {len(df_combined)} このおべんきょう）")
+                    st.success(f"🌟 おしえてくれてありがとう、ももちゃん！AIさんがまたかしこくなったよ！（合計: {len(df_combined)} このおべんきょう）")
 
 # ====== 過去からの全実績ダッシュボード ＆ 修正タブ ======
 st.write("---")
-st.write("## 🌈 みんなのまいにち・きろく おおぞらひろば")
+st.write("## 🌈 ももちゃんのまいにち・きろく おおぞらひろば")
 
 records = worksheet.get_all_records()
 df_history = pd.DataFrame(records)
@@ -406,7 +420,7 @@ if len(df_history) > 0:
             custom_history_input = st.text_input("新しいグループのなまえ：", placeholder="例：おやつ代 など", key="hist_custom")
             if custom_history_input:
                 edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
-                st.success(f"🍀 「{custom_history_input}」になおしたよ！")
+                st.success(f"🍀 「{custom_history_input}」になおしたよ、ももちゃん！")
         
         if st.button("💾 ほうせきばこを新しく上書きするよ"):
             try:
