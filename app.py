@@ -8,24 +8,20 @@ import json
 import gspread
 import lightgbm as lgb
 from sklearn.feature_extraction.text import TfidfVectorizer
+import streamlit.components.v1 as components
 
 st.set_page_config(layout="wide")
 
-# ====== 🎨 幼稚園児も喜ぶポップ＆パステルなデザイン（カスタムCSS） ======
+# ====== 🎨 幼稚園児も喜ぶポップ＆パステルなデザイン ＆ 効果音プレイヤー ======
 st.markdown("""
 <style>
-    /* 全体の背景を優しいクリーム色に */
     .stApp {
         background-color: #FFFDF0;
     }
-    
-    /* タイトルや見出しをポップで明るい色に */
     h1, h2, h3 {
         color: #FF6B6B !important;
         font-family: 'Helvetica Neue', Arial, sans-serif;
     }
-    
-    /* ボタンスタイルを丸っこく可愛いパステルカラーに */
     .stButton>button {
         background-color: #FFD166;
         color: #333333;
@@ -39,8 +35,6 @@ st.markdown("""
         color: white;
         border: 2px solid #FFD166;
     }
-    
-    /* タブのデザインを可愛く */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
     }
@@ -53,7 +47,54 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🎨 ぽかぽか かけいぼ ダッシュボード 🧸")
+# 音を鳴らすための魔法のJavaScript関数
+def play_sound(sound_type):
+    if sound_type == "success":
+        # キラキラした成功音（Web Audio APIで電子音を合成して鳴らします）
+        sound_code = """
+        <script>
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            function playTone(freq, time, delay) {
+                setTimeout(() => {
+                    let osc = ctx.createOscillator();
+                    let gain = ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + time);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + time);
+                }, delay);
+            }
+            playTone(523.25, 0.15, 0);   // ド
+            playTone(659.25, 0.15, 150); // ミ
+            playTone(783.99, 0.15, 300); // ソ
+            playTone(1046.50, 0.4, 450); // 高いド
+        </script>
+        """
+        components.html(sound_code, height=0)
+    elif cat_sound := sound_type == "pop":
+        sound_code = """
+        <script>
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            let osc = ctx.createOscillator();
+            let gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+        </script>
+        """
+        components.html(sound_code, height=0)
+
+st.title("🎨 ぽかぽか かけいぼ ダッシュボード 🧸🎵")
 
 # ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
@@ -68,7 +109,6 @@ worksheet = init_gspread()
 # ====== ローカルの教師データ管理用ファイル名 ======
 TRAIN_DATA_FILE = "labeled_log.csv"
 
-# --- 既存のカテゴリ一覧を自動収集する関数 ---
 def get_all_existing_categories():
     categories = ["食費", "交通費", "光熱費", "通信費", "趣味・娯楽", "日用品", "家賃", "衣服・美容", "交際費", "その他", "未分類"]
     if os.path.exists(TRAIN_DATA_FILE):
@@ -118,6 +158,7 @@ with st.expander("🛠️ AIをそだてる（管理メニュー）"):
             with open("vectorizer.pkl", "wb") as f:
                 pickle.dump(vec, f)
                 
+            play_sound("success")
             st.success("🎉 AIさんが新しく生まれ変わったよ！すごいね！")
         except Exception as e:
             st.error(f"エラーが起きたみたい: {e}")
@@ -215,6 +256,7 @@ if uploaded_files:
                     df_to_save['AI予測カテゴリ'] = df_to_save['AI予測カテゴリ'].fillna("未分類").astype(str)
                     
                     worksheet.append_rows(df_to_save.values.tolist())
+                    play_sound("success")
                     st.success(f"🍎 {len(df_to_save)} このでーたを、きれいにしまったよ！やったね！")
 
             with col_btn2:
@@ -245,6 +287,7 @@ if uploaded_files:
                     with open("vectorizer.pkl", "wb") as f:
                         pickle.dump(vec_new, f)
                         
+                    play_sound("success")
                     st.success(f"🌟 おしえてくれてありがとう！AIさんがまたかしこくなったよ！（合計: {len(df_combined)} このおべんきょう）")
 
 # ====== 過去からの全実績ダッシュボード ＆ 修正タブ ======
@@ -361,6 +404,7 @@ if len(df_history) > 0:
                 df_to_overwrite.columns = ["date", "item", "amount", "category"]
                 
                 worksheet.append_rows(df_to_overwrite.values.tolist())
+                play_sound("success")
                 st.success("✨ ぜんぶきれいに上書きできたよ！ページをぬりなおしてね（再読み込み）！")
             except Exception as e:
                 st.error(f"あれれ、エラーが出ちゃった: {e}")
