@@ -50,7 +50,6 @@ st.markdown("""
 # 音を鳴らすための魔法のJavaScript関数
 def play_sound(sound_type):
     if sound_type == "success":
-        # キラキラした成功音（Web Audio APIで電子音を合成して鳴らします）
         sound_code = """
         <script>
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -75,24 +74,39 @@ def play_sound(sound_type):
         </script>
         """
         components.html(sound_code, height=0)
-    elif cat_sound := sound_type == "pop":
-        sound_code = """
-        <script>
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            let osc = ctx.createOscillator();
-            let gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.1);
-        </script>
-        """
-        components.html(sound_code, height=0)
+
+# ====== 🔒 パスワード認証の仕組み ======
+# セッション状態に認証フラグがない場合は False に初期化
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+# まだ認証されていない場合は、パスワード入力画面だけを表示して止める
+if not st.session_state.authenticated:
+    st.title("🔒 けいびの おまわりさん（パスワード認証）")
+    st.write("このお部屋に入るには、ひみつの合言葉が必要だよ！")
+    
+    # ユーザーに入力を求める（文字が隠れるタイプ）
+    input_pass = st.text_input("ひみつのあいことばをいれてね", type="password")
+    
+    if st.button("とびらを開ける！"):
+        # Streamlit Cloudの Secrets からパスワードを取得（設定されていない場合はデフォルト "kakeibo123"）
+        correct_password = st.secrets.get("app_password", "kakeibo123")
+        
+        if input_pass == correct_password:
+            st.session_state.authenticated = True
+            play_sound("success")
+            st.success("🎉 合言葉が正解したよ！中に入るね...")
+            st.rerun() # 画面を再読み込みしてメイン画面へ
+        else:
+            st.error("❌ あいことばがちがうみたい。もう一度ためしてね！")
+            
+    # パスワードが通るまでは、これより下のコードを実行せずにここでストップする
+    st.stop()
+
+
+# ==========================================
+# 🔓 以下、パスワード認証を突破したあとのメインアプリ
+# ==========================================
 
 st.title("🎨 ぽかぽか かけいぼ ダッシュボード 🧸🎵")
 
