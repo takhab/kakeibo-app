@@ -10,7 +10,7 @@ import lightgbm as lgb
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 st.set_page_config(layout="wide")
-st.title("💰 家計ログ & AI自己成長ダッシュボード（完全版）")
+st.title("💰 家計ログ & AI自己成長ダッシュボード")
 
 # ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
@@ -24,6 +24,24 @@ worksheet = init_gspread()
 
 # ====== ローカルの教師データ管理用ファイル名 ======
 TRAIN_DATA_FILE = "labeled_log.csv"
+
+# --- 既存のカテゴリ一覧を自動収集する関数 ---
+def get_all_existing_categories():
+    categories = set(["食費", "交通費", "光熱費", "通信費", "趣味・娯楽", "日用品", "家賃", "衣服・美容", "交際費", "その他", "未分類"])
+    if os.path.exists(TRAIN_DATA_FILE):
+        df_tr = pd.read_csv(TRAIN_DATA_FILE)
+        if "category" in df_tr.columns:
+            categories.update(df_tr["category"].dropna().astype(str).tolist())
+    try:
+        records = worksheet.get_all_records()
+        if records:
+            df_hist = pd.DataFrame(records)
+            cat_col = 'category' if 'category' in df_hist.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_hist.columns else None)
+            if cat_col:
+                categories.update(df_hist[cat_col].dropna().astype(str).tolist())
+    except Exception:
+        pass
+    return sorted(list(categories))
 
 # ====== 管理者・AI育成メニュー ======
 with st.expander("🛠️ AI育成・管理メニュー（修正データの追加と再学習）"):
@@ -53,13 +71,13 @@ with st.expander("🛠️ AI育成・管理メニュー（修正データの追�
             with open("vectorizer.pkl", "wb") as f:
                 pickle.dump(vec, f)
                 
-            st.success("✅ 教師 데이터를 基にAIモデルを再学習・更新しました！")
+            st.success("✅ 教師データを基にAIモデルを再学習・更新しました！")
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
 
 # ====== 新しいデータの追加・修正・学習ループ処理 ======
 st.write("---")
-st.write("### 📥 新しい明細の登録とカテゴリ自由修正")
+st.write("### 📥 新しい明細の登録とカテゴリ修正")
 
 uploaded_files = st.file_uploader("複数月の明細CSVをまとめて選択してアップロード", type="csv", accept_multiple_files=True)
 
@@ -110,14 +128,18 @@ if uploaded_files:
 
             df["AI予測カテゴリ"] = model.predict(X_new)
             
-            st.write("✨ **AIの予測結果（下の表でカテゴリ名を自由に書き換えられます）**")
+            st.write("✨ **AIの予測結果**")
+            
+            # --- 既存カテゴリの一覧を表示（ユーザーがコピペや入力の参考にできるようにする） ---
+            existing_cats = get_all_existing_categories()
+            st.info(f"💡 **既存のカテゴリ候補（入力の参考にしてください）**: {', '.join(existing_cats)}")
             
             edited_df = st.data_editor(
                 df,
                 column_config={
                     "AI予測カテゴリ": st.column_config.TextColumn(
-                        "カテゴリ（自由入力OK）",
-                        help="ダブルクリックして新しいカテゴリ名を自由に文字入力できます",
+                        "カテゴリ（既存名を選んでも、新しい名前を自由に打ってもOK）",
+                        help="既存のカテゴリ名を合わせるか、新しい名前を自由に書き込んでください",
                         required=True,
                     )
                 },
@@ -168,7 +190,7 @@ if uploaded_files:
                     with open("vectorizer.pkl", "wb") as f:
                         pickle.dump(vec_new, f)
                         
-                    st.success(f"🎉 教師データに新しい自由入力パターンを追加し、AIモデルをアップデートしました！（累計: {len(df_combined)}件）")
+                    st.success(f"🎉 教師データに新しいパターンを追加し、AIモデルをアップデートしました！（累計: {len(df_combined)}件）")
 
 # ====== 過去からの全実績ダッシュボード ＆ 自由修正タブ ======
 st.write("---")
@@ -184,7 +206,6 @@ if len(df_history) > 0:
     df_history['year'] = df_history['date'].dt.year
     df_history['year_month'] = df_history['date'].dt.strftime('%Y-%m')
 
-    # タブに「📝 過去データの編集・修正」を追加！
     tab1, tab2, tab3, tab4 = st.tabs(["📅 月別・年別サマリー", "📈 全体トレンド", "🍕 カテゴリ分析", "📝 過去データの編集・修正"])
 
     with tab1:
@@ -241,41 +262,38 @@ if len(df_history) > 0:
         ax.axis('equal')
         st.pyplot(fig)
 
-    with tab4:
+    with tag_tab4 := tab4:
         st.write("### 📝 過去に蓄積されたデータの確認・カテゴリ修正")
-        st.write("スプレッドシートにある過去の全データをここで直接修正し、スプレッドシート側へ上書き保存（またはAIの再学習）できます。")
         
-        # 見やすいように日付を文字列に戻しておく
+        # 既存カテゴリ一覧を過去データ編集タブでも表示
+        existing_cats_history = get_all_existing_categories()
+        st.info(f"💡 **既存のカテゴリ候補**: {', '.join(existing_cats_history)}")
+        
         df_history_editable = df_history[['date', 'item', 'amount']].copy()
-        # カテゴリになり得る列を探す
         cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
         df_history_editable['カテゴリ'] = df_history[cat_col_target]
         df_history_editable['date'] = df_history_editable['date'].dt.strftime('%Y-%m-%d')
         
-        # 過去データ用のエディタ
         edited_history_df = st.data_editor(
             df_history_editable,
             column_config={
                 "カテゴリ": st.column_config.TextColumn(
-                    "カテゴリ（いつでも自由に変更可能）",
-                    help="過去のデータでもここでダブルクリックすれば自由に変更できます",
+                    "カテゴリ（既存名合わせ・または新規自由入力）",
+                    help="既存のカテゴリ名を合わせるか、新しい名前を自由に入力できます",
                     required=True,
                 )
             },
             hide_index=True,
             key="history_editor",
-            num_rows="dynamic" # 行の追加や削除もできるようにする場合
+            num_rows="dynamic"
         )
         
         if st.button("💾 編集した過去データをスプレッドシートに「上書き保存」する"):
             try:
-                # スプレッドシートの全内容をクリアして、編集後のデータを丸ごと書き込む（完全同期）
                 worksheet.clear()
-                # ヘッダーを書き込む
                 header = ["date", "item", "amount", "category"]
                 worksheet.append_row(header)
                 
-                # データを整形してリスト化
                 df_to_overwrite = edited_history_df[['date', 'item', 'amount', 'カテゴリ']].copy()
                 df_to_overwrite.columns = ["date", "item", "amount", "category"]
                 
