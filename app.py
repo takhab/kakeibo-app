@@ -27,21 +27,25 @@ TRAIN_DATA_FILE = "labeled_log.csv"
 
 # --- 既存のカテゴリ一覧を自動収集する関数 ---
 def get_all_existing_categories():
-    categories = set(["食費", "交通費", "光熱費", "通信費", "趣味・娯楽", "日用品", "家賃", "衣服・美容", "交際費", "その他", "未分類"])
+    categories = ["食費", "交通費", "光熱費", "通信費", "趣味・娯楽", "日用品", "家賃", "衣服・美容", "交際費", "その他", "未分類"]
     if os.path.exists(TRAIN_DATA_FILE):
         df_tr = pd.read_csv(TRAIN_DATA_FILE)
         if "category" in df_tr.columns:
-            categories.update(df_tr["category"].dropna().astype(str).tolist())
+            for cat in df_tr["category"].dropna().astype(str).unique():
+                if cat not in categories:
+                    categories.append(cat)
     try:
         records = worksheet.get_all_records()
         if records:
             df_hist = pd.DataFrame(records)
             cat_col = 'category' if 'category' in df_hist.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_hist.columns else None)
             if cat_col:
-                categories.update(df_hist[cat_col].dropna().astype(str).tolist())
+                for cat in df_hist[cat_col].dropna().astype(str).unique():
+                    if cat not in categories:
+                        categories.append(cat)
     except Exception:
         pass
-    return sorted(list(categories))
+    return categories
 
 # ====== 管理者・AI育成メニュー ======
 with st.expander("🛠️ AI育成・管理メニュー（修正データの追加と再学習）"):
@@ -128,23 +132,37 @@ if uploaded_files:
 
             df["AI予測カテゴリ"] = model.predict(X_new)
             
-            st.write("✨ **AIの予測結果**")
+            st.write("✨ **AIの予測結果（確認・修正）**")
             
-            existing_cats = get_all_existing_categories()
-            st.info(f"💡 **既存のカテゴリ候補（入力の参考にしてください）**: {', '.join(existing_cats)}")
+            # --- プルダウン用のリストを作成（最後に「➕ 新規カテゴリを自由入力する...」を混ぜる） ---
+            base_categories = get_all_existing_categories()
+            select_options = base_categories + ["➕ 新規カテゴリを自由入力する..."]
             
+            # 各行のカテゴリを選ぶセレクトボックス（またはカスタム修正 UI）
+            # Streamlitのdata_editor内でセレクトボックスを使いつつ、もし「新規」を選んだ場合の補助として個別変更も置く
             edited_df = st.data_editor(
                 df,
                 column_config={
-                    "AI予測カテゴリ": st.column_config.TextColumn(
-                        "カテゴリ（既存名を選んでも、新しい名前を自由に打ってもOK）",
-                        help="既存のカテゴリ名を合わせるか、新しい名前を自由に書き込んでください",
+                    "AI予測カテゴリ": st.column_config.SelectboxColumn(
+                        "カテゴリ（選択）",
+                        help="既存のカテゴリから選ぶか、リストにない場合は「➕ 新規カテゴリを自由入力する...」を選んでください",
+                        options=select_options,
                         required=True,
                     )
                 },
                 hide_index=True,
                 key="expense_editor"
             )
+
+            # --- もし「➕ 新規カテゴリを自由入力する...」が選ばれた行があれば、ここで自由に入力させるエリアを出す ---
+            new_cat_mask = edited_df["AI予測カテゴリ"] == "➕ 新規カテゴリを自由入力する..."
+            if new_cat_mask.any():
+                st.warning("⚠️ 「➕ 新規カテゴリを自由入力する...」が選択されている行があります。下の欄に新しいカテゴリ名を入力してください。")
+                custom_input = st.text_input("新しく追加したいカテゴリ名を入力してください:", placeholder="例: 推し活、自己投資 など")
+                if custom_input:
+                    # 「新規入力する...」となっている部分を、入力された自由テキストに自動置換する
+                    edited_df.loc[new_cat_mask, "AI予測カテゴリ"] = custom_input
+                    st.success(f"✅ 選択中の「新規入力」をすべて **「{custom_input}」** に適用しました！")
 
             col_btn1, col_btn2 = st.columns(2)
             
@@ -191,7 +209,7 @@ if uploaded_files:
                         
                     st.success(f"🎉 教師データに新しいパターンを追加し、AIモデルをアップデートしました！（累計: {len(df_combined)}件）")
 
-# ====== 過去からの全実績ダッシュボード ＆ 自由修正タブ ======
+# ====== 過去からの全実績ダッシュボード ＆ 修正タブ ======
 st.write("---")
 st.write("## 📊 過去の実績ダッシュボード ＆ データ管理")
 
@@ -264,8 +282,8 @@ if len(df_history) > 0:
     with tab4:
         st.write("### 📝 過去に蓄積されたデータの確認・カテゴリ修正")
         
-        existing_cats_history = get_all_existing_categories()
-        st.info(f"💡 **既存のカテゴリ候補**: {', '.join(existing_cats_history)}")
+        base_categories_history = get_all_existing_categories()
+        select_options_history = base_categories_history + ["➕ 新規カテゴリを自由入力する..."]
         
         df_history_editable = df_history[['date', 'item', 'amount']].copy()
         cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
@@ -275,9 +293,10 @@ if len(df_history) > 0:
         edited_history_df = st.data_editor(
             df_history_editable,
             column_config={
-                "カテゴリ": st.column_config.TextColumn(
-                    "カテゴリ（既存名合わせ・または新規自由入力）",
-                    help="既存のカテゴリ名を合わせるか、新しい名前を自由に入力できます",
+                "カテゴリ": st.column_config.SelectboxColumn(
+                    "カテゴリ（選択）",
+                    help="既存から選ぶか、「➕ 新規カテゴリを自由入力する...」を選んでください",
+                    options=select_options_history,
                     required=True,
                 )
             },
@@ -285,6 +304,15 @@ if len(df_history) > 0:
             key="history_editor",
             num_rows="dynamic"
         )
+        
+        # 過去データ側でも新規入力が選ばれた場合のテキスト入力枠を用意
+        new_cat_history_mask = edited_history_df["カテゴリ"] == "➕ 新規カテゴリを自由入力する..."
+        if new_cat_history_mask.any():
+            st.warning("⚠️ 過去データで「➕ 新規カテゴリを自由入力する...」が選択されている行があります。")
+            custom_history_input = st.text_input("過去データ用の新しいカテゴリ名を入力:", placeholder="例: 特別費、サブスク など", key="hist_custom")
+            if custom_history_input:
+                edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
+                st.success(f"✅ 選択中の「新規入力」をすべて **「{custom_history_input}」** に適用しました！")
         
         if st.button("💾 編集した過去データをスプレッドシートに「上書き保存」する"):
             try:
