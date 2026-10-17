@@ -71,24 +71,35 @@ if uploaded_file is not None:
         # 変な文字（"nan"や空白）は一旦NaN（空っぽ）にして、0に置き換えてから整数にする
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
 
-    # 共通フォーマット（date, item, amount）に変換できたかチェック
+#   共通フォーマット（date, item, amount）に変換できたかチェック
     if not {"date", "item", "amount"}.issubset(df.columns):
         st.error("❌ 未対応のCSVフォーマットです。")
-        st.stop() # 処理をここで安全に止める
+        st.stop()
         
-   # 必要な3列だけを抽出して以降のAI処理に渡す
+    # 必要な3列だけを抽出
     df = df[["date", "item", "amount"]].copy()
     
-    # --- 追加：フィルタリングで歯抜けになった行番号を綺麗に振り直す ---
+    # =========================================================
+    # 🛡️ 最強のデータサニタイズ（無毒化）処理
+    # どんなCSVが来てもAIがエラーを起こさないように最終調整します
+    # =========================================================
+    # 1. 歯抜けになった行番号を綺麗に0から振り直す（インデックスエラー防止）
     df = df.reset_index(drop=True)
-    # ------------------------------------------------------------
+    
+    # 2. 万が一データが0件になってしまった場合は安全に止める
+    if len(df) == 0:
+        st.warning("処理できる明細データが見つかりませんでした。")
+        st.stop()
+        
+    # 3. 店舗名が空欄の場合は「不明」で埋め、確実に文字（str）にする
+    df["item"] = df["item"].fillna("不明").astype(str)
+    
+    # 4. 金額列に文字やカンマが混ざっていても、強制的に数値（int）に変換する
+    df["amount"] = df["amount"].astype(str).str.replace(",", "")
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
+    # =========================================================
     
     # --- これ以降は元のAI予測処理 ---
-    
-    # --- これ以降は元のAI予測処理 ---
-    if not os.path.exists("model.pkl") or not os.path.exists("vectorizer.pkl"):
-        st.error("AIモデルが見つかりません。上の管理者メニューから「AIモデルを再学習する」を実行してください。")
-    
     if not os.path.exists("model.pkl") or not os.path.exists("vectorizer.pkl"):
         st.error("AIモデルが見つかりません。上の管理者メニューから「AIモデルを再学習する」を実行してください。")
     else:
