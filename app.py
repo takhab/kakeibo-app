@@ -13,10 +13,9 @@ st.title("💰 家計ログ 実績ダッシュボード")
 # ====== スプレッドシート連携の準備 ======
 @st.cache_resource
 def init_gspread():
-    # 隠しておいた秘密の鍵（JSON文字列）を読み込んで認証する
     credentials_dict = json.loads(st.secrets["google_credentials"])
     gc = gspread.service_account_from_dict(credentials_dict)
-    sh = gc.open("kakeibo_db") # スプレッドシートの名前
+    sh = gc.open("kakeibo_db")
     return sh.sheet1
 
 worksheet = init_gspread()
@@ -71,7 +70,6 @@ if uploaded_file is not None:
         
     df = df[["date", "item", "amount"]].copy()
     
-    # 最終サニタイズ
     df = df.reset_index(drop=True)
     if len(df) == 0:
         st.stop()
@@ -95,10 +93,8 @@ if uploaded_file is not None:
         st.write("✨ **今回の予測結果（まだ保存されていません）**")
         st.dataframe(df, use_container_width=True)
 
-        # DBへ保存するボタン
         if st.button("この予測データをスプレッドシートに保存する"):
             df_to_save = df[["date", "item", "amount", "AI予測カテゴリ"]].copy()
-            # Pandasのデータをリストのリストに変換して一気に書き込む
             worksheet.append_rows(df_to_save.values.tolist())
             st.success("✅ スプレッドシートに実績を安全に保存しました！")
 
@@ -106,25 +102,76 @@ if uploaded_file is not None:
 st.write("---")
 st.write("## 📊 過去の実績ダッシュボード")
 
-# スプレッドシートから全データを引っ張ってくる
 records = worksheet.get_all_records()
 df_history = pd.DataFrame(records)
 
 if len(df_history) > 0:
-    col1, col2 = st.columns(2)
+    # 日付型の変換と年月列の作成
+    df_history['date'] = pd.to_datetime(df_history['date'], errors='coerce')
+    df_history = df_history.dropna(subset=['date']) # 不正な日付を除外
     
-    with col1:
-        st.write("### 📊 カテゴリ別支出割合（全期間）")
+    df_history['year'] = df_history['date'].dt.year
+    df_history['year_month'] = df_history['date'].dt.strftime('%Y-%m')
+
+    # --- タブによる表示切替 ---
+    tab1, tab2, tab3 = st.tabs(["📅 月別・年別サマリー", "📈 全体トレンド", "🍕 カテゴリ分析"])
+
+    with tab1:
+        st.write("### 📅 月別・年別の支出確認")
+        
+        # 年の選択肢を作成
+        years = sorted(df_history['year'].unique(), reverse=True)
+        selected_year = st.selectbox("表示する年を選択", years)
+        
+        # 選択された年のデータに絞り込み
+        df_year = df_history[df_history['year'] == selected_year]
+        
+        # 月別の合計金額を計算
+        monthly_summary = df_year.groupby('year_month')['amount'].sum().reset_index()
+        monthly_summary.columns = ['年月', '合計金額 (円)']
+        
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.dataframe(monthly_summary, use_container_width=True)
+        with col_m2:
+            st.write(f"**{selected_year}年 月別支出推移**")
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.bar(monthly_summary['年月'], monthly_summary['合計金額 (円)'], color='skyblue')
+            ax.set_xticklabels(monthly_summary['年月'], rotation=45)
+            ax.set_ylabel("円")
+            st.pyplot(fig)
+
+        st.write("---")
+        # 特定の月を選んで詳細を見る
+        months = sorted(df_year['year_month'].unique(), reverse=True)
+        if len(months) > 0:
+            selected_month = st.selectbox("さらに月別のカテゴリ内訳を見る", months)
+            df_month = df_year[df_year['year_month'] == selected_month]
+            
+            cat_month_sum = df_month.groupby('category')['amount'].sum()
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                st.write(f"**{selected_month} のカテゴリ別内訳**")
+                st.dataframe(cat_month_sum.reset_index().rename(columns={'category': 'カテゴリ', 'amount': '金額 (円)'}), use_container_width=True)
+            with col_c2:
+                fig, ax = plt.subplots(figsize=(5, 5))
+                if len(cat_month_sum) > 0:
+                    ax.pie(cat_month_sum, labels=cat_month_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
+                    ax.axis('equal')
+                    st.pyplot(fig)
+
+    with tab2:
+        st.write("### 📈 日別の支出推移（全期間）")
+        daily_sum = df_history.groupby('date')["amount"].sum()
+        st.line_chart(daily_sum)
+
+    with tab3:
+        st.write("### 🍕 カテゴリ別支出割合（全期間トータル）")
         category_sum = df_history.groupby("category")["amount"].sum()
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
         ax.axis('equal')
         st.pyplot(fig)
-        
-    with col2:
-        st.write("### 📈 日別の支出推移（全期間）")
-        df_history['date'] = pd.to_datetime(df_history['date'])
-        daily_sum = df_history.groupby('date')["amount"].sum()
-        st.line_chart(daily_sum)
+
 else:
     st.info("まだ実績データがありません。上のメニューからCSVをアップロードして保存してください。")
