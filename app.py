@@ -61,7 +61,9 @@ if uploaded_file is not None:
         
     # ビューカードのフォーマットを検出した場合
     elif "ご利用箇所" in df.columns:
-        df = df.dropna(subset=["ご利用年月日"]) # 利用者名などが入った不要な行を削除
+        # 修正：日付に「/」が含まれる本物の明細行だけを抽出（小ヘッダーや合計フッターの行を除外）
+        df = df[df["ご利用年月日"].astype(str).str.contains("/", na=False)]
+        
         df = df.rename(columns={"ご利用年月日": "date", "ご利用箇所": "item", "ご利用額": "amount"})
         
         # カンマを消す
