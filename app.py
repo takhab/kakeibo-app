@@ -10,7 +10,50 @@ import lightgbm as lgb
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 st.set_page_config(layout="wide")
-st.title("💰 家計ログ & AI自己成長ダッシュボード")
+
+# ====== 🎨 幼稚園児も喜ぶポップ＆パステルなデザイン（カスタムCSS） ======
+st.markdown("""
+<style>
+    /* 全体の背景を優しいクリーム色に */
+    .stApp {
+        background-color: #FFFDF0;
+    }
+    
+    /* タイトルや見出しをポップで明るい色に */
+    h1, h2, h3 {
+        color: #FF6B6B !important;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+    
+    /* ボタンスタイルを丸っこく可愛いパステルカラーに */
+    .stButton>button {
+        background-color: #FFD166;
+        color: #333333;
+        border-radius: 20px;
+        font-weight: bold;
+        border: 2px solid #FF6B6B;
+        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+    }
+    .stButton>button:hover {
+        background-color: #FF6B6B;
+        color: white;
+        border: 2px solid #FFD166;
+    }
+    
+    /* タブのデザインを可愛く */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #E0F7FA;
+        border-radius: 10px 10px 0px 0px;
+        color: #00796B;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🎨 ぽかぽか かけいぼ ダッシュボード 🧸")
 
 # ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
@@ -48,16 +91,16 @@ def get_all_existing_categories():
     return categories
 
 # ====== 管理者・AI育成メニュー ======
-with st.expander("🛠️ AI育成・管理メニュー（修正データの追加と再学習）"):
-    st.write("利用者が直した教師データ（`labeled_log.csv`）をベースに、AIモデルを再学習させます。")
+with st.expander("🛠️ AIをそだてる（管理メニュー）"):
+    st.write("みんなの修正したデータを元にして、AIさんをもっとかしこくするよ！")
     
     if os.path.exists(TRAIN_DATA_FILE):
         df_current_train = pd.read_csv(TRAIN_DATA_FILE)
-        st.info(f"現在の教師データ件数: **{len(df_current_train)} 件**")
+        st.info(f"いまおぼえているデータのかず: **{len(df_current_train)} まい**")
     else:
-        st.warning("⚠️ 教師データファイルが見つかりません。")
+        st.warning("⚠️ まだデータがないよ。")
 
-    if st.button("AIモデルを再学習してアップデートする"):
+    if st.button("✨ AIさんをお勉強させなおす"):
         try:
             df_train = pd.read_csv(TRAIN_DATA_FILE)
             vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
@@ -75,15 +118,15 @@ with st.expander("🛠️ AI育成・管理メニュー（修正データの追�
             with open("vectorizer.pkl", "wb") as f:
                 pickle.dump(vec, f)
                 
-            st.success("✅ 教師データを基にAIモデルを再学習・更新しました！")
+            st.success("🎉 AIさんが新しく生まれ変わったよ！すごいね！")
         except Exception as e:
-            st.error(f"エラーが発生しました: {e}")
+            st.error(f"エラーが起きたみたい: {e}")
 
 # ====== 新しいデータの追加・修正・学習ループ処理 ======
 st.write("---")
-st.write("### 📥 新しい明細の登録とカテゴリ修正")
+st.write("### 🎈 わくわく おかいもの帳のまほうつかい")
 
-uploaded_files = st.file_uploader("複数月の明細CSVをまとめて選択してアップロード", type="csv", accept_multiple_files=True)
+uploaded_files = st.file_uploader("のりまきみたいに、CSVファイルをまとめてポンと入れてね！", type="csv", accept_multiple_files=True)
 
 if uploaded_files:
     all_dfs = []
@@ -132,20 +175,17 @@ if uploaded_files:
 
             df["AI予測カテゴリ"] = model.predict(X_new)
             
-            st.write("✨ **AIの予測結果（確認・修正）**")
+            st.write("✨ **AIさんのよそうけっかだよ！まちがってたら、おててで直してね👇**")
             
-            # --- プルダウン用のリストを作成（最後に「➕ 新規カテゴリを自由入力する...」を混ぜる） ---
             base_categories = get_all_existing_categories()
-            select_options = base_categories + ["➕ 新規カテゴリを自由入力する..."]
+            select_options = base_categories + ["➕ 新しいなまえをじゆうに作る"]
             
-            # 各行のカテゴリを選ぶセレクトボックス（またはカスタム修正 UI）
-            # Streamlitのdata_editor内でセレクトボックスを使いつつ、もし「新規」を選んだ場合の補助として個別変更も置く
             edited_df = st.data_editor(
                 df,
                 column_config={
                     "AI予測カテゴリ": st.column_config.SelectboxColumn(
-                        "カテゴリ（選択）",
-                        help="既存のカテゴリから選ぶか、リストにない場合は「➕ 新規カテゴリを自由入力する...」を選んでください",
+                        "どんなグループかな？",
+                        help="ここをぽちっと押して選んでね",
                         options=select_options,
                         required=True,
                     )
@@ -154,20 +194,18 @@ if uploaded_files:
                 key="expense_editor"
             )
 
-            # --- もし「➕ 新規カテゴリを自由入力する...」が選ばれた行があれば、ここで自由に入力させるエリアを出す ---
-            new_cat_mask = edited_df["AI予測カテゴリ"] == "➕ 新規カテゴリを自由入力する..."
+            new_cat_mask = edited_df["AI予測カテゴリ"] == "➕ 新しいなまえをじゆうに作る"
             if new_cat_mask.any():
-                st.warning("⚠️ 「➕ 新規カテゴリを自由入力する...」が選択されている行があります。下の欄に新しいカテゴリ名を入力してください。")
-                custom_input = st.text_input("新しく追加したいカテゴリ名を入力してください:", placeholder="例: 推し活、自己投資 など")
+                st.warning("⚠️ 「新しいなまえ」が選ばれているよ！下のきいろいばこに、新しいなまえを書いてね。")
+                custom_input = st.text_input("新しいなまえ：", placeholder="例：おもちゃ、たからもの など")
                 if custom_input:
-                    # 「新規入力する...」となっている部分を、入力された自由テキストに自動置換する
                     edited_df.loc[new_cat_mask, "AI予測カテゴリ"] = custom_input
-                    st.success(f"✅ 選択中の「新規入力」をすべて **「{custom_input}」** に適用しました！")
+                    st.success(f"🍀 「{custom_input}」にぜんぶ書き換えたよ！")
 
             col_btn1, col_btn2 = st.columns(2)
             
             with col_btn1:
-                if st.button("💾 ① スプレッドシート（家計簿DB）に追記保存する"):
+                if st.button("💾 ① ほうせきばこ（スプレッドシート）にしまう"):
                     df_to_save = edited_df[["date", "item", "amount", "AI予測カテゴリ"]].copy()
                     df_to_save['date'] = pd.to_datetime(df_to_save['date'], errors='coerce')
                     df_to_save = df_to_save.dropna(subset=['date'])
@@ -177,10 +215,10 @@ if uploaded_files:
                     df_to_save['AI予測カテゴリ'] = df_to_save['AI予測カテゴリ'].fillna("未分類").astype(str)
                     
                     worksheet.append_rows(df_to_save.values.tolist())
-                    st.success(f"✅ {len(df_to_save)} 件の実績データをスプレッドシートへ追記保存しました！")
+                    st.success(f"🍎 {len(df_to_save)} このでーたを、きれいにしまったよ！やったね！")
 
             with col_btn2:
-                if st.button("🧠 ② 修正内容を「教師データ」に追加してAIを育成する"):
+                if st.button("🧠 ② AIさんに「これが正解だよ」とおしえてあげる"):
                     new_training_data = edited_df[["item", "amount", "AI予測カテゴリ"]].copy()
                     new_training_data.columns = ["item", "amount", "category"]
                     
@@ -207,11 +245,11 @@ if uploaded_files:
                     with open("vectorizer.pkl", "wb") as f:
                         pickle.dump(vec_new, f)
                         
-                    st.success(f"🎉 教師データに新しいパターンを追加し、AIモデルをアップデートしました！（累計: {len(df_combined)}件）")
+                    st.success(f"🌟 おしえてくれてありがとう！AIさんがまたかしこくなったよ！（合計: {len(df_combined)} このおべんきょう）")
 
 # ====== 過去からの全実績ダッシュボード ＆ 修正タブ ======
 st.write("---")
-st.write("## 📊 過去の実績ダッシュボード ＆ データ管理")
+st.write("## 🌈 みんなのまいにち・きろく おおぞらひろば")
 
 records = worksheet.get_all_records()
 df_history = pd.DataFrame(records)
@@ -223,12 +261,12 @@ if len(df_history) > 0:
     df_history['year'] = df_history['date'].dt.year
     df_history['year_month'] = df_history['date'].dt.strftime('%Y-%m')
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📅 月別・年別サマリー", "📈 全体トレンド", "🍕 カテゴリ分析", "📝 過去データの編集・修正"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📅 なんがつ・なんねん？", "📈 ぜんぶのいっぽう", "🍕 グループのわけっこ", "📝 かこのでーたを直す"])
 
     with tab1:
-        st.write("### 📅 月別・年別の支出確認")
+        st.write("### 📅 つきごとの おかいものばしょ")
         years = sorted(df_history['year'].unique(), reverse=True)
-        selected_year = st.selectbox("表示する年を選択", years, key="sel_year")
+        selected_year = st.selectbox("なにねんのを見たい？", years, key="sel_year")
         
         df_year = df_history[df_history['year'] == selected_year]
         monthly_summary = df_year.groupby('year_month')['amount'].sum().reset_index()
@@ -238,9 +276,9 @@ if len(df_history) > 0:
         with col_m1:
             st.dataframe(monthly_summary, use_container_width=True)
         with col_m2:
-            st.write(f"**{selected_year}年 月別支出推移**")
+            st.write(f"**{selected_year}ねん の かたち**")
             fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(monthly_summary['年月'], monthly_summary['合計金額 (円)'], color='skyblue')
+            ax.bar(monthly_summary['年月'], monthly_summary['合計金額 (円)'], color='#FF9AA2')
             ax.set_xticklabels(monthly_summary['年月'], rotation=45)
             ax.set_ylabel("円")
             st.pyplot(fig)
@@ -248,7 +286,7 @@ if len(df_history) > 0:
         st.write("---")
         months = sorted(df_year['year_month'].unique(), reverse=True)
         if len(months) > 0:
-            selected_month = st.selectbox("さらに月別のカテゴリ内訳を見る", months, key="sel_month")
+            selected_month = st.selectbox("もっとくわしく見るつきをえらんでね", months, key="sel_month")
             df_month = df_year[df_year['year_month'] == selected_month]
             
             cat_col = 'category' if 'category' in df_month.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_month.columns else df_month.columns[-1])
@@ -256,8 +294,8 @@ if len(df_history) > 0:
             
             col_c1, col_c2 = st.columns(2)
             with col_c1:
-                st.write(f"**{selected_month} のカテゴリ別内訳**")
-                st.dataframe(cat_month_sum.reset_index().rename(columns={cat_col: 'カテゴリ', 'amount': '金額 (円)'}), use_container_width=True)
+                st.write(f"**{selected_month} の なかみ**")
+                st.dataframe(cat_month_sum.reset_index().rename(columns={cat_col: 'グループ', 'amount': '金額 (円)'}), use_container_width=True)
             with col_c2:
                 fig, ax = plt.subplots(figsize=(5, 5))
                 if len(cat_month_sum) > 0:
@@ -266,12 +304,12 @@ if len(df_history) > 0:
                     st.pyplot(fig)
 
     with tab2:
-        st.write("### 📈 日別の支出推移（全期間）")
+        st.write("### 📈 ひづごとのおかいもの（ぜんぶ）")
         daily_sum = df_history.groupby('date')["amount"].sum()
         st.line_chart(daily_sum)
 
     with tab3:
-        st.write("### 🍕 カテゴリ別支出割合（全期間トータル）")
+        st.write("### 🍕 どんなことにたくさん使ったかな？")
         cat_col_all = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
         category_sum = df_history.groupby(cat_col_all)["amount"].sum()
         fig, ax = plt.subplots(figsize=(6, 6))
@@ -280,10 +318,10 @@ if len(df_history) > 0:
         st.pyplot(fig)
 
     with tab4:
-        st.write("### 📝 過去に蓄積されたデータの確認・カテゴリ修正")
+        st.write("### 📝 まえにしまったきろくを直すよ")
         
         base_categories_history = get_all_existing_categories()
-        select_options_history = base_categories_history + ["➕ 新規カテゴリを自由入力する..."]
+        select_options_history = base_categories_history + ["➕ 新しいなまえをじゆうに作る"]
         
         df_history_editable = df_history[['date', 'item', 'amount']].copy()
         cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
@@ -294,8 +332,8 @@ if len(df_history) > 0:
             df_history_editable,
             column_config={
                 "カテゴリ": st.column_config.SelectboxColumn(
-                    "カテゴリ（選択）",
-                    help="既存から選ぶか、「➕ 新規カテゴリを自由入力する...」を選んでください",
+                    "えらんでね",
+                    help="ここからえらぶか、新しく作れるよ",
                     options=select_options_history,
                     required=True,
                 )
@@ -305,16 +343,15 @@ if len(df_history) > 0:
             num_rows="dynamic"
         )
         
-        # 過去データ側でも新規入力が選ばれた場合のテキスト入力枠を用意
-        new_cat_history_mask = edited_history_df["カテゴリ"] == "➕ 新規カテゴリを自由入力する..."
+        new_cat_history_mask = edited_history_df["カテゴリ"] == "➕ 新しいなまえをじゆうに作る"
         if new_cat_history_mask.any():
-            st.warning("⚠️ 過去データで「➕ 新規カテゴリを自由入力する...」が選択されている行があります。")
-            custom_history_input = st.text_input("過去データ用の新しいカテゴリ名を入力:", placeholder="例: 特別費、サブスク など", key="hist_custom")
+            st.warning("⚠️ 新しいなまえを書くばこが出たよ！")
+            custom_history_input = st.text_input("新しいグループのなまえ：", placeholder="例：おやつ代 など", key="hist_custom")
             if custom_history_input:
                 edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
-                st.success(f"✅ 選択中の「新規入力」をすべて **「{custom_history_input}」** に適用しました！")
+                st.success(f"🍀 「{custom_history_input}」になおしたよ！")
         
-        if st.button("💾 編集した過去データをスプレッドシートに「上書き保存」する"):
+        if st.button("💾 ほうせきばこを新しく上書きするよ"):
             try:
                 worksheet.clear()
                 header = ["date", "item", "amount", "category"]
@@ -324,9 +361,9 @@ if len(df_history) > 0:
                 df_to_overwrite.columns = ["date", "item", "amount", "category"]
                 
                 worksheet.append_rows(df_to_overwrite.values.tolist())
-                st.success("✅ スプレッドシートの過去データをすべて更新・上書き保存しました！ページを更新するとダッシュボードに反映されます。")
+                st.success("✨ ぜんぶきれいに上書きできたよ！ページをぬりなおしてね（再読み込み）！")
             except Exception as e:
-                st.error(f"保存中にエラーが発生しました: {e}")
+                st.error(f"あれれ、エラーが出ちゃった: {e}")
 
 else:
-    st.info("まだ実績データがありません。上のメニューからCSVをアップロードして保存してください。")
+    st.info("まだ何もきろくがないよ！上のボタンからファイルをポンと入れてね！")
