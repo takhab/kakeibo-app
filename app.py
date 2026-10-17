@@ -6,11 +6,13 @@ import japanize_matplotlib
 import os
 import json
 import gspread
+import lightgbm as lgb
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 st.set_page_config(layout="wide")
-st.title("💰 家計ログ 実績ダッシュボード")
+st.title("💰 家計ログ & AI自己成長ダッシュボード（自由入力対応）")
 
-# ====== スプレッドシート連携の準備 ======
+# ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
 def init_gspread():
     credentials_dict = json.loads(st.secrets["google_credentials"])
@@ -20,41 +22,49 @@ def init_gspread():
 
 worksheet = init_gspread()
 
-# ====== 管理者メニュー ======
-with st.expander("🛠️ 管理者メニュー（AIの再学習）"):
-    st.write("環境のズレを直すため、サーバー上でAIモデルを作り直します。")
-    if st.button("AIモデルを再学習する"):
-        import lightgbm as lgb
-        from sklearn.feature_extraction.text import TfidfVectorizer
+# ====== ローカルの教師データ管理用ファイル名 ======
+TRAIN_DATA_FILE = "labeled_log.csv"
+
+# ====== 管理者・AI育成メニュー ======
+with st.expander("🛠️ AI育成・管理メニュー（修正データの追加と再学習）"):
+    st.write("利用者が直した教師データ（`labeled_log.csv`）をベースに、AIモデルを再学習させます。")
+    
+    if os.path.exists(TRAIN_DATA_FILE):
+        df_current_train = pd.read_csv(TRAIN_DATA_FILE)
+        st.info(f"現在の教師データ件数: **{len(df_current_train)} 件**")
+    else:
+        st.warning("⚠️ 教師データファイルが見つかりません。")
+
+    if st.button("AIモデルを再学習してアップデートする"):
         try:
-            df_train = pd.read_csv("labeled_log.csv")
+            df_train = pd.read_csv(TRAIN_DATA_FILE)
             vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
             X_text = vec.fit_transform(df_train["item"])
             X_text_df = pd.DataFrame(X_text.toarray())
             X_text_df.columns = ["feat_" + str(i) for i in range(X_text_df.shape[1])]
             X = pd.concat([X_text_df, df_train[["amount"]]], axis=1)
             y = df_train["category"]
+            
             model = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
             model.fit(X, y)
+            
             with open("model.pkl", "wb") as f:
                 pickle.dump(model, f)
             with open("vectorizer.pkl", "wb") as f:
                 pickle.dump(vec, f)
-            st.success("✅ サーバーの環境に合わせてAIモデルを作り直しました！")
+                
+            st.success("✅ 教師データを基にAIモデルを再学習・更新しました！")
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
 
-# ====== 新しいデータの追加処理（複数ファイル対応） ======
+# ====== 新しいデータの追加・修正・学習ループ処理 ======
 st.write("---")
-st.write("### 📥 新しい明細の登録（複数ファイル一括対応）")
+st.write("### 📥 新しい明細の登録とカテゴリ自由修正")
 
-# accept_multiple_files=True で複数選択が可能に
 uploaded_files = st.file_uploader("複数月の明細CSVをまとめて選択してアップロード", type="csv", accept_multiple_files=True)
 
 if uploaded_files:
     all_dfs = []
-    
-    # 選択されたファイルを1つずつループして読み込み・整形する
     for uploaded_file in uploaded_files:
         try:
             df_temp = pd.read_csv(uploaded_file)
@@ -75,21 +85,17 @@ if uploaded_files:
             all_dfs.append(df_temp)
             
     if len(all_dfs) > 0:
-        # すべての月のデータを縦に結合する
         df = pd.concat(all_dfs, ignore_index=True)
         
-        # --- 追加：日付がない行（備考欄や空行など）を完全に除外する ---
+        # 不正な日付や空行の除外
         df = df.dropna(subset=['date'])
         df = df[df['date'].astype(str).str.strip() != '']
-        # 日付文字列が「/」や「-」などを含んでいるまともな行だけを残す（おかしな文字列を除外）
         df = df[df['date'].astype(str).str.contains(r'[/|-]', na=False)]
         
         df = df.reset_index(drop=True)
         df["item"] = df["item"].fillna("不明").astype(str)
         df["amount"] = df["amount"].astype(str).str.replace(",", "")
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
-        
-        # 重複データの簡易除外
         df = df.drop_duplicates().reset_index(drop=True)
         
         if os.path.exists("model.pkl") and os.path.exists("vectorizer.pkl"):
@@ -105,15 +111,66 @@ if uploaded_files:
 
             df["AI予測カテゴリ"] = model.predict(X_new)
             
-            st.write(f"✨ **結合後の全予測結果（合計 {len(df)} 件）**")
-            st.dataframe(df, use_container_width=True)
+            st.write("✨ **AIの予測結果（下の表のカテゴリ名をダブルクリックして自由に書き換えられます）**")
+            
+            # --- ユーザーが自由テキストで書き込めるエディタに変更 ---
+            edited_df = st.data_editor(
+                df,
+                column_config={
+                    "AI予測カテゴリ": st.column_config.TextColumn(
+                        "カテゴリ（自由入力OK）",
+                        help="ダブルクリックして新しいカテゴリ名を自由に文字入力できます",
+                        required=True,
+                    )
+                },
+                hide_index=True,
+                key="expense_editor"
+            )
 
-            if st.button("このすべての予測データをスプレッドシートに保存する"):
-                df_to_save = df[["date", "item", "amount", "AI予測カテゴリ"]].copy()
-                worksheet.append_rows(df_to_save.values.tolist())
-                st.success(f"✅ {len(df_to_save)} 件のデータをスプレッドシートにまとめて安全に保存しました！")
-    else:
-        st.error("❌ 読み込める有効なCSVファイルが見つかりませんでした。フォーマットを確認してください。")
+            col_btn1, col_btn2 = st.columns(2)
+            
+            with col_btn1:
+                if st.button("💾 ① スプレッドシート（家計簿DB）に保存する"):
+                    df_to_save = edited_df[["date", "item", "amount", "AI予測カテゴリ"]].copy()
+                    df_to_save['date'] = pd.to_datetime(df_to_save['date'], errors='coerce')
+                    df_to_save = df_to_save.dropna(subset=['date'])
+                    df_to_save['date'] = df_to_save['date'].dt.strftime('%Y-%m-%d')
+                    df_to_save['amount'] = df_to_save['amount'].astype(int)
+                    df_to_save['item'] = df_to_save['item'].fillna("不明").astype(str)
+                    df_to_save['AI予測カテゴリ'] = df_to_save['AI予測カテゴリ'].fillna("未分類").astype(str)
+                    
+                    worksheet.append_rows(df_to_save.values.tolist())
+                    st.success(f"✅ {len(df_to_save)} 件の実績データをスプレッドシートへ綺麗に保存しました！")
+
+            with col_btn2:
+                if st.button("🧠 ② 修正内容を「教師データ」に追加してAIを即時育成する"):
+                    new_training_data = edited_df[["item", "amount", "AI予測カテゴリ"]].copy()
+                    new_training_data.columns = ["item", "amount", "category"]
+                    
+                    if os.path.exists(TRAIN_DATA_FILE):
+                        df_old_train = pd.read_csv(TRAIN_DATA_FILE)
+                        df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates()
+                    else:
+                        df_combined = new_training_data
+                        
+                    df_combined.to_csv(TRAIN_DATA_FILE, index=False)
+                    
+                    vec_new = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+                    X_text_new = vec_new.fit_transform(df_combined["item"])
+                    X_text_new_df = pd.DataFrame(X_text_new.toarray())
+                    X_text_new_df.columns = ["feat_" + str(i) for i in range(X_text_new_df.shape[1])]
+                    X_train_final = pd.concat([X_text_new_df, df_combined[["amount"]]], axis=1)
+                    y_train_final = df_combined["category"]
+                    
+                    model_new = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
+                    model_new.fit(X_train_final, y_train_final)
+                    
+                    with open("model.pkl", "wb") as f:
+                        pickle.dump(model_new, f)
+                    with open("vectorizer.pkl", "wb") as f:
+                        pickle.dump(vec_new, f)
+                        
+                    st.success(f"🎉 教師データに新しい自由入力パターンを追加し、AIモデルを直ちに賢くアップデートしました！（累計教師データ数: {len(df_combined)}件）")
 
 # ====== 過去からの全実績ダッシュボード ======
 st.write("---")
@@ -157,11 +214,13 @@ if len(df_history) > 0:
             selected_month = st.selectbox("さらに月別のカテゴリ内訳を見る", months)
             df_month = df_year[df_year['year_month'] == selected_month]
             
-            cat_month_sum = df_month.groupby('category')['amount'].sum()
+            cat_col = 'category' if 'category' in df_month.columns else 'AI予測カテゴリ'
+            cat_month_sum = df_month.groupby(cat_col)['amount'].sum()
+            
             col_c1, col_c2 = st.columns(2)
             with col_c1:
                 st.write(f"**{selected_month} のカテゴリ別内訳**")
-                st.dataframe(cat_month_sum.reset_index().rename(columns={'category': 'カテゴリ', 'amount': '金額 (円)'}), use_container_width=True)
+                st.dataframe(cat_month_sum.reset_index().rename(columns={cat_col: 'カテゴリ', 'amount': '金額 (円)'}), use_container_width=True)
             with col_c2:
                 fig, ax = plt.subplots(figsize=(5, 5))
                 if len(cat_month_sum) > 0:
@@ -176,7 +235,8 @@ if len(df_history) > 0:
 
     with tab3:
         st.write("### 🍕 カテゴリ別支出割合（全期間トータル）")
-        category_sum = df_history.groupby("category")["amount"].sum()
+        cat_col_all = 'category' if 'category' in df_history.columns else 'AI予測カテゴリ'
+        category_sum = df_history.groupby(cat_col_all)["amount"].sum()
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
         ax.axis('equal')
