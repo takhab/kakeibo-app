@@ -10,7 +10,7 @@ import lightgbm as lgb
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 st.set_page_config(layout="wide")
-st.title("💰 家計ログ & AI自己成長ダッシュボード（自由入力対応）")
+st.title("💰 家計ログ & AI自己成長ダッシュボード（完全版）")
 
 # ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
@@ -53,7 +53,7 @@ with st.expander("🛠️ AI育成・管理メニュー（修正データの追�
             with open("vectorizer.pkl", "wb") as f:
                 pickle.dump(vec, f)
                 
-            st.success("✅ 教師データを基にAIモデルを再学習・更新しました！")
+            st.success("✅ 教師 데이터를 基にAIモデルを再学習・更新しました！")
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
 
@@ -87,7 +87,6 @@ if uploaded_files:
     if len(all_dfs) > 0:
         df = pd.concat(all_dfs, ignore_index=True)
         
-        # 不正な日付や空行の除外
         df = df.dropna(subset=['date'])
         df = df[df['date'].astype(str).str.strip() != '']
         df = df[df['date'].astype(str).str.contains(r'[/|-]', na=False)]
@@ -111,9 +110,8 @@ if uploaded_files:
 
             df["AI予測カテゴリ"] = model.predict(X_new)
             
-            st.write("✨ **AIの予測結果（下の表のカテゴリ名をダブルクリックして自由に書き換えられます）**")
+            st.write("✨ **AIの予測結果（下の表でカテゴリ名を自由に書き換えられます）**")
             
-            # --- ユーザーが自由テキストで書き込めるエディタに変更 ---
             edited_df = st.data_editor(
                 df,
                 column_config={
@@ -130,7 +128,7 @@ if uploaded_files:
             col_btn1, col_btn2 = st.columns(2)
             
             with col_btn1:
-                if st.button("💾 ① スプレッドシート（家計簿DB）に保存する"):
+                if st.button("💾 ① スプレッドシート（家計簿DB）に追記保存する"):
                     df_to_save = edited_df[["date", "item", "amount", "AI予測カテゴリ"]].copy()
                     df_to_save['date'] = pd.to_datetime(df_to_save['date'], errors='coerce')
                     df_to_save = df_to_save.dropna(subset=['date'])
@@ -140,10 +138,10 @@ if uploaded_files:
                     df_to_save['AI予測カテゴリ'] = df_to_save['AI予測カテゴリ'].fillna("未分類").astype(str)
                     
                     worksheet.append_rows(df_to_save.values.tolist())
-                    st.success(f"✅ {len(df_to_save)} 件の実績データをスプレッドシートへ綺麗に保存しました！")
+                    st.success(f"✅ {len(df_to_save)} 件の実績データをスプレッドシートへ追記保存しました！")
 
             with col_btn2:
-                if st.button("🧠 ② 修正内容を「教師データ」に追加してAIを即時育成する"):
+                if st.button("🧠 ② 修正内容を「教師データ」に追加してAIを育成する"):
                     new_training_data = edited_df[["item", "amount", "AI予測カテゴリ"]].copy()
                     new_training_data.columns = ["item", "amount", "category"]
                     
@@ -170,11 +168,11 @@ if uploaded_files:
                     with open("vectorizer.pkl", "wb") as f:
                         pickle.dump(vec_new, f)
                         
-                    st.success(f"🎉 教師データに新しい自由入力パターンを追加し、AIモデルを直ちに賢くアップデートしました！（累計教師データ数: {len(df_combined)}件）")
+                    st.success(f"🎉 教師データに新しい自由入力パターンを追加し、AIモデルをアップデートしました！（累計: {len(df_combined)}件）")
 
-# ====== 過去からの全実績ダッシュボード ======
+# ====== 過去からの全実績ダッシュボード ＆ 自由修正タブ ======
 st.write("---")
-st.write("## 📊 過去の実績ダッシュボード")
+st.write("## 📊 過去の実績ダッシュボード ＆ データ管理")
 
 records = worksheet.get_all_records()
 df_history = pd.DataFrame(records)
@@ -186,12 +184,13 @@ if len(df_history) > 0:
     df_history['year'] = df_history['date'].dt.year
     df_history['year_month'] = df_history['date'].dt.strftime('%Y-%m')
 
-    tab1, tab2, tab3 = st.tabs(["📅 月別・年別サマリー", "📈 全体トレンド", "🍕 カテゴリ分析"])
+    # タブに「📝 過去データの編集・修正」を追加！
+    tab1, tab2, tab3, tab4 = st.tabs(["📅 月別・年別サマリー", "📈 全体トレンド", "🍕 カテゴリ分析", "📝 過去データの編集・修正"])
 
     with tab1:
         st.write("### 📅 月別・年別の支出確認")
         years = sorted(df_history['year'].unique(), reverse=True)
-        selected_year = st.selectbox("表示する年を選択", years)
+        selected_year = st.selectbox("表示する年を選択", years, key="sel_year")
         
         df_year = df_history[df_history['year'] == selected_year]
         monthly_summary = df_year.groupby('year_month')['amount'].sum().reset_index()
@@ -211,10 +210,10 @@ if len(df_history) > 0:
         st.write("---")
         months = sorted(df_year['year_month'].unique(), reverse=True)
         if len(months) > 0:
-            selected_month = st.selectbox("さらに月別のカテゴリ内訳を見る", months)
+            selected_month = st.selectbox("さらに月別のカテゴリ内訳を見る", months, key="sel_month")
             df_month = df_year[df_year['year_month'] == selected_month]
             
-            cat_col = 'category' if 'category' in df_month.columns else 'AI予測カテゴリ'
+            cat_col = 'category' if 'category' in df_month.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_month.columns else df_month.columns[-1])
             cat_month_sum = df_month.groupby(cat_col)['amount'].sum()
             
             col_c1, col_c2 = st.columns(2)
@@ -235,12 +234,55 @@ if len(df_history) > 0:
 
     with tab3:
         st.write("### 🍕 カテゴリ別支出割合（全期間トータル）")
-        cat_col_all = 'category' if 'category' in df_history.columns else 'AI予測カテゴリ'
+        cat_col_all = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
         category_sum = df_history.groupby(cat_col_all)["amount"].sum()
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
         ax.axis('equal')
         st.pyplot(fig)
+
+    with tab4:
+        st.write("### 📝 過去に蓄積されたデータの確認・カテゴリ修正")
+        st.write("スプレッドシートにある過去の全データをここで直接修正し、スプレッドシート側へ上書き保存（またはAIの再学習）できます。")
+        
+        # 見やすいように日付を文字列に戻しておく
+        df_history_editable = df_history[['date', 'item', 'amount']].copy()
+        # カテゴリになり得る列を探す
+        cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
+        df_history_editable['カテゴリ'] = df_history[cat_col_target]
+        df_history_editable['date'] = df_history_editable['date'].dt.strftime('%Y-%m-%d')
+        
+        # 過去データ用のエディタ
+        edited_history_df = st.data_editor(
+            df_history_editable,
+            column_config={
+                "カテゴリ": st.column_config.TextColumn(
+                    "カテゴリ（いつでも自由に変更可能）",
+                    help="過去のデータでもここでダブルクリックすれば自由に変更できます",
+                    required=True,
+                )
+            },
+            hide_index=True,
+            key="history_editor",
+            num_rows="dynamic" # 行の追加や削除もできるようにする場合
+        )
+        
+        if st.button("💾 編集した過去データをスプレッドシートに「上書き保存」する"):
+            try:
+                # スプレッドシートの全内容をクリアして、編集後のデータを丸ごと書き込む（完全同期）
+                worksheet.clear()
+                # ヘッダーを書き込む
+                header = ["date", "item", "amount", "category"]
+                worksheet.append_row(header)
+                
+                # データを整形してリスト化
+                df_to_overwrite = edited_history_df[['date', 'item', 'amount', 'カテゴリ']].copy()
+                df_to_overwrite.columns = ["date", "item", "amount", "category"]
+                
+                worksheet.append_rows(df_to_overwrite.values.tolist())
+                st.success("✅ スプレッドシートの過去データをすべて更新・上書き保存しました！ページを更新するとダッシュボードに反映されます。")
+            except Exception as e:
+                st.error(f"保存中にエラーが発生しました: {e}")
 
 else:
     st.info("まだ実績データがありません。上のメニューからCSVをアップロードして保存してください。")
