@@ -78,12 +78,18 @@ if uploaded_files:
         # すべての月のデータを縦に結合する
         df = pd.concat(all_dfs, ignore_index=True)
         
+        # --- 追加：日付がない行（備考欄や空行など）を完全に除外する ---
+        df = df.dropna(subset=['date'])
+        df = df[df['date'].astype(str).str.strip() != '']
+        # 日付文字列が「/」や「-」などを含んでいるまともな行だけを残す（おかしな文字列を除外）
+        df = df[df['date'].astype(str).str.contains(r'[/|-]', na=False)]
+        
         df = df.reset_index(drop=True)
         df["item"] = df["item"].fillna("不明").astype(str)
         df["amount"] = df["amount"].astype(str).str.replace(",", "")
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
         
-        # 重複データの簡易除外（もし同じ明細を重複して読み込んでいる場合の保険）
+        # 重複データの簡易除外
         df = df.drop_duplicates().reset_index(drop=True)
         
         if os.path.exists("model.pkl") and os.path.exists("vectorizer.pkl"):
