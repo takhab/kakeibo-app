@@ -22,8 +22,9 @@ with st.expander("🛠️ 管理者メニュー（AIの再学習）"):
             vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
             X_text = vec.fit_transform(df_train["item"])
             X = pd.concat([pd.DataFrame(X_text.toarray()), df_train[["amount"]]], axis=1)
-            X.columns = X.columns.astype(str)
-            y = df_train["category"]
+            X_text_df = pd.DataFrame(X_text.toarray())
+            X_text_df.columns = ["feat_" + str(i) for i in range(X_text_df.shape[1])] # 列名を feat_0, feat_1 にする
+            X = pd.concat([X_text_df, df_train[["amount"]]], axis=1)
             
             # min_child_samples=2 を入れて少人数でも学習させる
             model = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
@@ -109,9 +110,10 @@ if uploaded_file is not None:
             vec = pickle.load(f)
 
         X_text = vec.transform(df["item"])
-        X_new = pd.concat([pd.DataFrame(X_text.toarray()), df[["amount"]]], axis=1)
-        X_new.columns = X_new.columns.astype(str)
-        
+        X_text_df = pd.DataFrame(X_text.toarray())
+        X_text_df.columns = ["feat_" + str(i) for i in range(X_text_df.shape[1])] # 列名を feat_0, feat_1 にする
+        X_new = pd.concat([X_text_df, df[["amount"]]], axis=1)
+
         df["AI予測カテゴリ"] = model.predict(X_new)
         
         st.write("### ✨ 明細データ一覧")
