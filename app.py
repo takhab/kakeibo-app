@@ -45,8 +45,37 @@ st.write("明細データをアップロードすると、AIが自動分類し�
 uploaded_file = st.file_uploader("明細CSVをアップロードしてください", type="csv")
 
 if uploaded_file is not None:
-    # --- (これ以降は元のapp.pyと同じ) ---
-    df = pd.read_csv(uploaded_file)
+    # --- 1. データエンジニアリング：多様なファイルの自動読み込み ---
+    try:
+        # 楽天カードなどの通常のUTF-8形式で読み込みを試す
+        df = pd.read_csv(uploaded_file)
+    except UnicodeDecodeError:
+        # エラーが出たら、ビューカードなどのShift-JIS形式として再挑戦する
+        uploaded_file.seek(0)
+        df = pd.read_csv(uploaded_file, encoding="shift-jis", skiprows=5)
+        
+    # --- 2. データエンジニアリング：フォーマットの自動名寄せ ---
+    # 楽天カードのフォーマットを検出した場合
+    if "利用店名・商品名" in df.columns:
+        df = df.rename(columns={"利用日": "date", "利用店名・商品名": "item", "利用金額": "amount"})
+        
+    # ビューカードのフォーマットを検出した場合
+    elif "ご利用箇所" in df.columns:
+        df = df.dropna(subset=["ご利用年月日"]) # 利用者名などが入った不要な行を削除
+        df = df.rename(columns={"ご利用年月日": "date", "ご利用箇所": "item", "ご利用額": "amount"})
+        df["amount"] = df["amount"].astype(str).str.replace(",", "").astype(int)
+
+    # 共通フォーマット（date, item, amount）に変換できたかチェック
+    if not {"date", "item", "amount"}.issubset(df.columns):
+        st.error("❌ 未対応のCSVフォーマットです。")
+        st.stop() # 処理をここで安全に止める
+        
+    # 必要な3列だけを抽出して以降のAI処理に渡す
+    df = df[["date", "item", "amount"]].copy()
+    
+    # --- これ以降は元のAI予測処理 ---
+    if not os.path.exists("model.pkl") or not os.path.exists("vectorizer.pkl"):
+        st.error("AIモデルが見つかりません。上の管理者メニューから「AIモデルを再学習する」を実行してください。")
     
     if not os.path.exists("model.pkl") or not os.path.exists("vectorizer.pkl"):
         st.error("AIモデルが見つかりません。上の管理者メニューから「AIモデルを再学習する」を実行してください。")
