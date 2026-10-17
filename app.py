@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 import pickle
-import matplotlib.pyplot as plt
-import japanize_matplotlib
 import os
 import json
 import gspread
 import lightgbm as lgb
 from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit.components.v1 as components
+import plotly.express as px
 
 st.set_page_config(layout="wide")
 
@@ -44,7 +43,6 @@ st.markdown("""
         color: #00796B;
         font-weight: bold;
     }
-    /* ももちゃんウェルカムカードのスタイル */
     .welcome-card {
         background: linear-gradient(135deg, #FF9AA2 0%, #FFB7B2 50%, #FFDAC1 100%);
         padding: 25px;
@@ -57,7 +55,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 音を鳴らすための魔法のJavaScript関数
 def play_sound(sound_type):
     if sound_type == "success":
         sound_code = """
@@ -77,10 +74,10 @@ def play_sound(sound_type):
                     osc.stop(ctx.currentTime + time);
                 }, delay);
             }
-            playTone(523.25, 0.15, 0);   // ド
-            playTone(659.25, 0.15, 150); // ミ
-            playTone(783.99, 0.15, 300); // ソ
-            playTone(1046.50, 0.4, 450); // 高いド
+            playTone(523.25, 0.15, 0);
+            playTone(659.25, 0.15, 150);
+            playTone(783.99, 0.15, 300);
+            playTone(1046.50, 0.4, 450);
         </script>
         """
         components.html(sound_code, height=0)
@@ -110,10 +107,9 @@ if not st.session_state.authenticated:
 
 
 # ==========================================
-# 🔓 パスワード認証クリア後のメインアプリ（ももちゃん歓迎！）
+# 🔓 パスワード認証クリア後のメインアプリ
 # ==========================================
 
-# 🌸 ももちゃん専用のウェルカムバナー・演出
 st.markdown("""
 <div class="welcome-card">
     <h1>👑 ももちゃん、おかえりなさい！ 🌸</h1>
@@ -124,7 +120,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ====== スプレッドシート連携の準備（DB用） ======
 @st.cache_resource
 def init_gspread():
     credentials_dict = json.loads(st.secrets["google_credentials"])
@@ -133,8 +128,6 @@ def init_gspread():
     return sh.sheet1
 
 worksheet = init_gspread()
-
-# ====== ローカルの教師データ管理用ファイル名 ======
 TRAIN_DATA_FILE = "labeled_log.csv"
 
 def get_all_existing_categories():
@@ -158,7 +151,6 @@ def get_all_existing_categories():
         pass
     return categories
 
-# ====== 管理者・AI育成メニュー ======
 with st.expander("🛠️ AIをそだてる（管理メニュー）"):
     st.write("ももちゃんが直したデータを元にして、AIさんをもっとかしこくするよ！")
     
@@ -191,7 +183,6 @@ with st.expander("🛠️ AIをそだてる（管理メニュー）"):
         except Exception as e:
             st.error(f"エラーが起きたみたい: {e}")
 
-# ====== 新しいデータの追加・修正・学習ループ処理 ======
 st.write("---")
 st.write("### 🎈 わくわく おかいもの帳のまほうつかい")
 
@@ -220,11 +211,9 @@ if uploaded_files:
             
     if len(all_dfs) > 0:
         df = pd.concat(all_dfs, ignore_index=True)
-        
         df = df.dropna(subset=['date'])
         df = df[df['date'].astype(str).str.strip() != '']
         df = df[df['date'].astype(str).str.contains(r'[/|-]', na=False)]
-        
         df = df.reset_index(drop=True)
         df["item"] = df["item"].fillna("不明").astype(str)
         df["amount"] = df["amount"].astype(str).str.replace(",", "")
@@ -241,7 +230,6 @@ if uploaded_files:
             X_text_df = pd.DataFrame(X_text.toarray())
             X_text_df.columns = ["feat_" + str(i) for i in range(X_text_df.shape[1])]
             X_new = pd.concat([X_text_df, df[["amount"]]], axis=1)
-
             df["AI予測カテゴリ"] = model.predict(X_new)
             
             st.write("✨ **AIさんのよそうけっかだよ！まちがってたら、ももちゃんがおててで直してね👇**")
@@ -318,7 +306,6 @@ if uploaded_files:
                     play_sound("success")
                     st.success(f"🌟 おしえてくれてありがとう、ももちゃん！AIさんがまたかしこくなったよ！（合計: {len(df_combined)} このおべんきょう）")
 
-# ====== 過去からの全実績ダッシュボード ＆ 修正タブ ======
 st.write("---")
 st.write("## 🌈 ももちゃんのまいにち・きろく おおぞらひろば")
 
@@ -328,7 +315,6 @@ df_history = pd.DataFrame(records)
 if len(df_history) > 0:
     df_history['date'] = pd.to_datetime(df_history['date'], errors='coerce')
     df_history = df_history.dropna(subset=['date'])
-    
     df_history['year'] = df_history['date'].dt.year
     df_history['year_month'] = df_history['date'].dt.strftime('%Y-%m')
 
@@ -348,11 +334,10 @@ if len(df_history) > 0:
             st.dataframe(monthly_summary, use_container_width=True)
         with col_m2:
             st.write(f"**{selected_year}ねん の かたち**")
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(monthly_summary['年月'], monthly_summary['合計金額 (円)'], color='#FF9AA2')
-            ax.set_xticklabels(monthly_summary['年月'], rotation=45)
-            ax.set_ylabel("円")
-            st.pyplot(fig)
+            fig = px.bar(monthly_summary, x='年月', y='合計金額 (円)', 
+                         color_discrete_sequence=['#FF9AA2'])
+            fig.update_layout(margin=dict(t=20, b=20, l=20, r=20))
+            st.plotly_chart(fig, use_container_width=True)
 
         st.write("---")
         months = sorted(df_year['year_month'].unique(), reverse=True)
@@ -361,18 +346,20 @@ if len(df_history) > 0:
             df_month = df_year[df_year['year_month'] == selected_month]
             
             cat_col = 'category' if 'category' in df_month.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_month.columns else df_month.columns[-1])
-            cat_month_sum = df_month.groupby(cat_col)['amount'].sum()
+            cat_month_sum = df_month.groupby(cat_col)['amount'].sum().reset_index()
+            cat_month_sum.columns = ['グループ', '金額 (円)']
             
             col_c1, col_c2 = st.columns(2)
             with col_c1:
                 st.write(f"**{selected_month} の なかみ**")
-                st.dataframe(cat_month_sum.reset_index().rename(columns={cat_col: 'グループ', 'amount': '金額 (円)'}), use_container_width=True)
+                st.dataframe(cat_month_sum, use_container_width=True)
             with col_c2:
-                fig, ax = plt.subplots(figsize=(5, 5))
-                if len(cat_month_sum) > 0:
-                    ax.pie(cat_month_sum, labels=cat_month_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
-                    ax.axis('equal')
-                    st.pyplot(fig)
+                # 🎨 月別のグラフをPlotlyのドーナツグラフに変更
+                fig_pie_month = px.pie(cat_month_sum, values='金額 (円)', names='グループ', hole=0.4,
+                                       color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_pie_month.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pie_month.update_layout(margin=dict(t=20, b=20, l=20, r=20), showlegend=False)
+                st.plotly_chart(fig_pie_month, use_container_width=True)
 
     with tab2:
         st.write("### 📈 ひづごとのおかいもの（ぜんぶ）")
@@ -382,11 +369,15 @@ if len(df_history) > 0:
     with tab3:
         st.write("### 🍕 どんなことにたくさん使ったかな？")
         cat_col_all = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
-        category_sum = df_history.groupby(cat_col_all)["amount"].sum()
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
-        ax.axis('equal')
-        st.pyplot(fig)
+        category_sum = df_history.groupby(cat_col_all)["amount"].sum().reset_index()
+        category_sum.columns = ['グループ', '金額 (円)']
+        
+        # 🎨 全期間のグラフをPlotlyのドーナツグラフに変更
+        fig_pie_all = px.pie(category_sum, values='金額 (円)', names='グループ', hole=0.4,
+                             color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_pie_all.update_traces(textposition='inside', textinfo='percent+label')
+        fig_pie_all.update_layout(margin=dict(t=20, b=20, l=20, r=20))
+        st.plotly_chart(fig_pie_all, use_container_width=True)
 
     with tab4:
         st.write("### 📝 まえにしまったきろくを直すよ")
