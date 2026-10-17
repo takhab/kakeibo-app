@@ -76,8 +76,14 @@ if uploaded_file is not None:
         st.error("❌ 未対応のCSVフォーマットです。")
         st.stop() # 処理をここで安全に止める
         
-    # 必要な3列だけを抽出して以降のAI処理に渡す
+   # 必要な3列だけを抽出して以降のAI処理に渡す
     df = df[["date", "item", "amount"]].copy()
+    
+    # --- 追加：フィルタリングで歯抜けになった行番号を綺麗に振り直す ---
+    df = df.reset_index(drop=True)
+    # ------------------------------------------------------------
+    
+    # --- これ以降は元のAI予測処理 ---
     
     # --- これ以降は元のAI予測処理 ---
     if not os.path.exists("model.pkl") or not os.path.exists("vectorizer.pkl"):
