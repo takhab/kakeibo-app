@@ -63,7 +63,11 @@ if uploaded_file is not None:
     elif "ご利用箇所" in df.columns:
         df = df.dropna(subset=["ご利用年月日"]) # 利用者名などが入った不要な行を削除
         df = df.rename(columns={"ご利用年月日": "date", "ご利用箇所": "item", "ご利用額": "amount"})
-        df["amount"] = df["amount"].astype(str).str.replace(",", "").astype(int)
+        
+        # カンマを消す
+        df["amount"] = df["amount"].astype(str).str.replace(",", "")
+        # 変な文字（"nan"や空白）は一旦NaN（空っぽ）にして、0に置き換えてから整数にする
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
 
     # 共通フォーマット（date, item, amount）に変換できたかチェック
     if not {"date", "item", "amount"}.issubset(df.columns):
