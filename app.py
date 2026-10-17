@@ -268,4 +268,37 @@ if len(df_history) > 0:
         st.info(f"💡 **既存のカテゴリ候補**: {', '.join(existing_cats_history)}")
         
         df_history_editable = df_history[['date', 'item', 'amount']].copy()
-        cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history
+        cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
+        df_history_editable['カテゴリ'] = df_history[cat_col_target]
+        df_history_editable['date'] = df_history_editable['date'].dt.strftime('%Y-%m-%d')
+        
+        edited_history_df = st.data_editor(
+            df_history_editable,
+            column_config={
+                "カテゴリ": st.column_config.TextColumn(
+                    "カテゴリ（既存名合わせ・または新規自由入力）",
+                    help="既存のカテゴリ名を合わせるか、新しい名前を自由に入力できます",
+                    required=True,
+                )
+            },
+            hide_index=True,
+            key="history_editor",
+            num_rows="dynamic"
+        )
+        
+        if st.button("💾 編集した過去データをスプレッドシートに「上書き保存」する"):
+            try:
+                worksheet.clear()
+                header = ["date", "item", "amount", "category"]
+                worksheet.append_row(header)
+                
+                df_to_overwrite = edited_history_df[['date', 'item', 'amount', 'カテゴリ']].copy()
+                df_to_overwrite.columns = ["date", "item", "amount", "category"]
+                
+                worksheet.append_rows(df_to_overwrite.values.tolist())
+                st.success("✅ スプレッドシートの過去データをすべて更新・上書き保存しました！ページを更新するとダッシュボードに反映されます。")
+            except Exception as e:
+                st.error(f"保存中にエラーが発生しました: {e}")
+
+else:
+    st.info("まだ実績データがありません。上のメニューからCSVをアップロードして保存してください。")
