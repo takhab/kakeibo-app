@@ -1,35 +1,50 @@
 import streamlit as st
 import pandas as pd
 import pickle
+import matplotlib.pyplot as plt
+import japanize_matplotlib # グラフの日本語文字化け防止
 
-st.title("💰 家計ログ 自動分類アプリ")
-st.write("明細データ（CSV）をアップロードすると、AIがカテゴリを自動予測します！")
+st.set_page_config(layout="wide") # 画面を広く使う設定
+st.title("💰 家計ログ 分析ダッシュボード")
+st.write("明細データをアップロードすると、AIが自動分類してグラフ化します。")
 
-# ファイルアップロード機能
-uploaded_file = st.file_uploader("テスト用に作られた 'money_log.csv' をアップロードしてみてください", type="csv")
+uploaded_file = st.file_uploader("明細CSVをアップロードしてください", type="csv")
 
 if uploaded_file is not None:
-    # データの読み込み
     df = pd.read_csv(uploaded_file)
     
-    # 学習済みのAIモデルと変換器を読み込む
     with open("model.pkl", "rb") as f:
         model = pickle.load(f)
     with open("vectorizer.pkl", "rb") as f:
         vec = pickle.load(f)
 
-    # 予測のためのデータ準備（train.pyと同じ処理）
     X_text = vec.transform(df["item"])
     X_new = pd.concat([pd.DataFrame(X_text.toarray()), df[["amount"]]], axis=1)
     X_new.columns = X_new.columns.astype(str)
     
-    # AIによる自動分類の実行！
     df["AI予測カテゴリ"] = model.predict(X_new)
     
-    # 結果の表示
-    st.write("### ✨ 分析・予測結果")
-    st.dataframe(df)
+    st.write("### ✨ 明細データ一覧")
+    st.dataframe(df, use_container_width=True)
 
-    # グラフの表示
-    st.write("### 📊 予測カテゴリ別の支出合計")
-    st.bar_chart(df.groupby("AI予測カテゴリ")["amount"].sum())
+    st.write("---")
+    
+    # 画面を左右に2分割してグラフを並べる
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("### 📊 カテゴリ別支出割合")
+        category_sum = df.groupby("AI予測カテゴリ")["amount"].sum()
+        # 円グラフの作成
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.pie(category_sum, labels=category_sum.index, autopct='%1.1f%%', startangle=90, counterclock=False)
+        ax.axis('equal')
+        st.pyplot(fig)
+        
+    with col2:
+        st.write("### 📈 日別の支出推移")
+        # 日付を時系列データとして処理し、日ごとに集計
+        df['date'] = pd.to_datetime(df['date'])
+        daily_sum = df.groupby('date')["amount"].sum()
+        # 折れ線グラフの表示
+        st.line_chart(daily_sum)
