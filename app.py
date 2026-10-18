@@ -379,7 +379,13 @@ if len(df_history) > 0:
             st.write(f"**{selected_year}ねん の かたち**")
             fig = px.bar(monthly_summary, x='年月', y='合計金額 (円)', 
                          color_discrete_sequence=['#FF9AA2'])
-            fig.update_layout(margin=dict(t=20, b=20, l=20, r=20))
+            # 📱 スマホ向け余白カット＆タップしやすく
+            fig.update_layout(
+                margin=dict(t=10, b=10, l=0, r=0), 
+                xaxis_title="", 
+                yaxis_title="",
+                hovermode="x unified"
+            )
             st.plotly_chart(fig, use_container_width=True)
 
         st.write("---")
@@ -399,14 +405,37 @@ if len(df_history) > 0:
             with col_c2:
                 fig_pie_month = px.pie(cat_month_sum, values='金額 (円)', names='グループ', hole=0.4,
                                        color_discrete_sequence=px.colors.qualitative.Pastel)
+                # 📱 スマホ向け余白カット＆凡例非表示でグラフを大きく
                 fig_pie_month.update_traces(textposition='inside', textinfo='percent+label')
-                fig_pie_month.update_layout(margin=dict(t=20, b=20, l=20, r=20), showlegend=False)
+                fig_pie_month.update_layout(margin=dict(t=10, b=10, l=0, r=0), showlegend=False)
                 st.plotly_chart(fig_pie_month, use_container_width=True)
 
     with tab2:
         st.write("### 📈 ひづごとのおかいもの（ぜんぶ）")
-        daily_sum = df_history.groupby('date')["amount"].sum()
-        st.line_chart(daily_sum)
+        daily_sum = df_history.groupby('date')["amount"].sum().reset_index()
+        daily_sum.columns = ['date', 'amount']
+        
+        # Streamlitの基本グラフから、高度なPlotlyに変更
+        fig_line = px.line(daily_sum, x='date', y='amount', markers=True, color_discrete_sequence=['#FF9AA2'])
+        
+        # 🌟 外れ値対策：飛び抜けて高い金額の日は、グラフの縦軸をカットして見やすくする
+        actual_max = daily_sum['amount'].max()
+        q90 = daily_sum['amount'].quantile(0.90) # 下から90%の人が収まる金額
+        
+        # 最大値が普段（90%ライン）の3倍以上ある場合は、外れ値とみなしてズーム
+        if actual_max > q90 * 3 and q90 > 0:
+            y_upper_limit = q90 * 3
+            st.info(f"💡 飛び抜けて高いおかいもの（最高 {actual_max:,.0f}円）があるから、見やすいようにグラフの上のほうを少し隠しているよ！👆指で触ると自由に動かせるよ！")
+        else:
+            y_upper_limit = actual_max * 1.05 if actual_max > 0 else 1000
+            
+        fig_line.update_layout(
+            margin=dict(t=10, b=10, l=0, r=0), # 📱 スマホ向けに左右の余白を極限までゼロに
+            yaxis=dict(range=[0, y_upper_limit], title=""),
+            xaxis=dict(title=""),
+            hovermode="x unified" # 📱 タップした時に縦線が出て金額が読みやすい
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
 
     with tab3:
         st.write("### 🍕 どんなことにたくさん使ったかな？")
@@ -416,8 +445,9 @@ if len(df_history) > 0:
         
         fig_pie_all = px.pie(category_sum, values='金額 (円)', names='グループ', hole=0.4,
                              color_discrete_sequence=px.colors.qualitative.Pastel)
+        # 📱 スマホ向け余白カット＆文字かぶり防止
         fig_pie_all.update_traces(textposition='inside', textinfo='percent+label')
-        fig_pie_all.update_layout(margin=dict(t=20, b=20, l=20, r=20))
+        fig_pie_all.update_layout(margin=dict(t=10, b=10, l=0, r=0), showlegend=False)
         st.plotly_chart(fig_pie_all, use_container_width=True)
 
     with tab4:
