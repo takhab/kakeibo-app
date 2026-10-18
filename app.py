@@ -8,6 +8,8 @@ import lightgbm as lgb
 from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit.components.v1 as components
 import plotly.express as px
+import extra_streamlit_components as stx
+import datetime
 
 st.set_page_config(layout="wide")
 
@@ -82,9 +84,18 @@ def play_sound(sound_type):
         """
         components.html(sound_code, height=0)
 
-# ====== 🔒 パスワード認証の仕組み ======
+# ====== 🔒 パスワード認証の仕組み（Cookieで30日間記憶！） ======
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+
+if cookie_manager.get(cookie="momo_kakeibo_auth") == "logged_in":
+    st.session_state.authenticated = True
 
 if not st.session_state.authenticated:
     st.title("🔒 けいびの おまわりさん（パスワード認証）")
@@ -97,6 +108,11 @@ if not st.session_state.authenticated:
         
         if input_pass == correct_password:
             st.session_state.authenticated = True
+            
+            # 30日間有効なCookieをセット
+            expire_date = datetime.datetime.now() + datetime.timedelta(days=30)
+            cookie_manager.set("momo_kakeibo_auth", "logged_in", expires_at=expire_date)
+            
             play_sound("success")
             st.success("🎉 合言葉が正解したよ！中に入るね...")
             st.rerun()
@@ -120,24 +136,45 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ====== 🌟 スプレッドシート連携（履歴用と学習用の2シート） ======
 @st.cache_resource
 def init_gspread():
     credentials_dict = json.loads(st.secrets["google_credentials"])
     gc = gspread.service_account_from_dict(credentials_dict)
     sh = gc.open("kakeibo_db")
-    return sh.sheet1
+    
+    ws_history = sh.sheet1
+    try:
+        ws_train = sh.worksheet("train_data")
+    except gspread.exceptions.WorksheetNotFound:
+        ws_train = sh.add_worksheet(title="train_data", rows="1000", cols="3")
+        ws_train.append_row(["item", "amount", "category"])
+        
+    return ws_history, ws_train
 
-worksheet = init_gspread()
-TRAIN_DATA_FILE = "labeled_log.csv"
+worksheet, worksheet_train = init_gspread()
+
+# --- 学習用データを取得（空白の幽霊行をブロック！） ---
+def get_train_data():
+    records = worksheet_train.get_all_records()
+    if records:
+        df = pd.DataFrame(records)
+        if 'item' in df.columns:
+            df['item'] = df['item'].astype(str).str.strip()
+            df = df[df['item'] != '']
+            df = df.dropna(subset=['item'])
+        return df
+    else:
+        return pd.DataFrame(columns=["item", "amount", "category"])
 
 def get_all_existing_categories():
     categories = ["食費", "交通費", "光熱費", "通信費", "趣味・娯楽", "日用品", "家賃", "衣服・美容", "交際費", "その他", "未分類"]
-    if os.path.exists(TRAIN_DATA_FILE):
-        df_tr = pd.read_csv(TRAIN_DATA_FILE)
-        if "category" in df_tr.columns:
-            for cat in df_tr["category"].dropna().astype(str).unique():
-                if cat not in categories:
-                    categories.append(cat)
+    df_tr = get_train_data()
+    if not df_tr.empty and "category" in df_tr.columns:
+        for cat in df_tr["category"].dropna().astype(str).unique():
+            if cat not in categories:
+                categories.append(cat)
+                
     try:
         records = worksheet.get_all_records()
         if records:
@@ -154,34 +191,36 @@ def get_all_existing_categories():
 with st.expander("🛠️ AIをそだてる（管理メニュー）"):
     st.write("ももちゃんが直したデータを元にして、AIさんをもっとかしこくするよ！")
     
-    if os.path.exists(TRAIN_DATA_FILE):
-        df_current_train = pd.read_csv(TRAIN_DATA_FILE)
+    df_current_train = get_train_data()
+    if not df_current_train.empty:
         st.info(f"いまおぼえているデータのかず: **{len(df_current_train)} まい**")
     else:
         st.warning("⚠️ まだデータがないよ。")
 
     if st.button("✨ AIさんをお勉強させなおす"):
-        try:
-            df_train = pd.read_csv(TRAIN_DATA_FILE)
-            vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
-            X_text = vec.fit_transform(df_train["item"])
-            X_text_df = pd.DataFrame(X_text.toarray())
-            X_text_df.columns = ["feat_" + str(i) for i in range(X_text_df.shape[1])]
-            X = pd.concat([X_text_df, df_train[["amount"]]], axis=1)
-            y = df_train["category"]
-            
-            model = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
-            model.fit(X, y)
-            
-            with open("model.pkl", "wb") as f:
-                pickle.dump(model, f)
-            with open("vectorizer.pkl", "wb") as f:
-                pickle.dump(vec, f)
+        if df_current_train.empty:
+            st.error("お勉強するデータがまだないみたい！")
+        else:
+            try:
+                vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+                X_text = vec.fit_transform(df_current_train["item"])
+                X_text_df = pd.DataFrame(X_text.toarray())
+                X_text_df.columns = ["feat_" + str(i) for i in range(X_text_df.shape[1])]
+                X = pd.concat([X_text_df, df_current_train[["amount"]]], axis=1)
+                y = df_current_train["category"]
                 
-            play_sound("success")
-            st.success("🎉 AIさんが新しく生まれ変わったよ！すごいね、ももちゃん！")
-        except Exception as e:
-            st.error(f"エラーが起きたみたい: {e}")
+                model = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
+                model.fit(X, y)
+                
+                with open("model.pkl", "wb") as f:
+                    pickle.dump(model, f)
+                with open("vectorizer.pkl", "wb") as f:
+                    pickle.dump(vec, f)
+                    
+                play_sound("success")
+                st.success("🎉 AIさんが新しく生まれ変わったよ！すごいね、ももちゃん！")
+            except Exception as e:
+                st.error(f"エラーが起きたみたい: {e}")
 
 st.write("---")
 st.write("### 🎈 わくわく おかいもの帳のまほうつかい")
@@ -278,24 +317,19 @@ if uploaded_files:
             with col_btn2:
                 if st.button("🧠 ② AIさんに「これが正解だよ」とおしえてあげる"):
                     
-                    # 🌟 ここが賢いポイント！AIの予想と、ももちゃんの修正結果を見比べる
+                    # 🌟 ももちゃんが直したデータだけを抽出！
                     changed_mask = df["AI予測カテゴリ"] != edited_df["AI予測カテゴリ"]
-                    corrected_df = edited_df[changed_mask] # ももちゃんが手動で直したデータだけを抽出！
+                    corrected_df = edited_df[changed_mask]
                     
                     if len(corrected_df) == 0:
-                        # 全部正解だった場合はお勉強をスキップ
                         st.info("🌟 AIさんの予想は全部大正解だったみたい！新しくお勉強することはないから、スキップするね！")
-                    
                     else:
-                        # 直したデータだけを抽出して教科書に追加
                         new_training_data = corrected_df[["item", "amount", "AI予測カテゴリ"]].copy()
                         new_training_data.columns = ["item", "amount", "category"]
                         
                         df_old_train = get_train_data()
-                        # 元の教科書に、直したデータだけを合体（追加）させる
                         df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates()
                         
-                        # 学習用スプレッドシートに追記保存する
                         worksheet_train.clear()
                         worksheet_train.append_row(["item", "amount", "category"])
                         worksheet_train.append_rows(df_combined.values.tolist())
@@ -365,7 +399,6 @@ if len(df_history) > 0:
                 st.write(f"**{selected_month} の なかみ**")
                 st.dataframe(cat_month_sum, use_container_width=True)
             with col_c2:
-                # 🎨 月別のグラフをPlotlyのドーナツグラフに変更
                 fig_pie_month = px.pie(cat_month_sum, values='金額 (円)', names='グループ', hole=0.4,
                                        color_discrete_sequence=px.colors.qualitative.Pastel)
                 fig_pie_month.update_traces(textposition='inside', textinfo='percent+label')
@@ -383,7 +416,6 @@ if len(df_history) > 0:
         category_sum = df_history.groupby(cat_col_all)["amount"].sum().reset_index()
         category_sum.columns = ['グループ', '金額 (円)']
         
-        # 🎨 全期間のグラフをPlotlyのドーナツグラフに変更
         fig_pie_all = px.pie(category_sum, values='金額 (円)', names='グループ', hole=0.4,
                              color_discrete_sequence=px.colors.qualitative.Pastel)
         fig_pie_all.update_traces(textposition='inside', textinfo='percent+label')
@@ -393,7 +425,6 @@ if len(df_history) > 0:
     with tab4:
         st.write("### 📝 まえにしまったきろくを直すよ")
         
-        # --- 既存カテゴリ一覧を取得して、新しい名前を作る選択肢を追加 ---
         base_categories_history = get_all_existing_categories()
         select_options_history = base_categories_history + ["➕ 新しいなまえをじゆうに作る"]
         
@@ -402,7 +433,6 @@ if len(df_history) > 0:
         df_history_editable['カテゴリ'] = df_history[cat_col_target]
         df_history_editable['date'] = df_history_editable['date'].dt.strftime('%Y-%m-%d')
         
-        # 🌟 ここを SelectboxColumn（プルダウン）に戻しました！
         edited_history_df = st.data_editor(
             df_history_editable,
             column_config={
@@ -418,7 +448,6 @@ if len(df_history) > 0:
             num_rows="dynamic"
         )
         
-        # 「➕ 新しいなまえをじゆうに作る」を選んだ時の黄色い箱
         new_cat_history_mask = edited_history_df["カテゴリ"] == "➕ 新しいなまえをじゆうに作る"
         if new_cat_history_mask.any():
             st.warning("⚠️ 新しいなまえを書くばこが出たよ！")
@@ -427,7 +456,6 @@ if len(df_history) > 0:
                 edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
                 st.success(f"🍀 「{custom_history_input}」になおしたよ、ももちゃん！")
         
-        # 🌟 ほうせきばこ上書き ＆ AI再学習ボタン
         col_h1, col_h2 = st.columns(2)
         
         with col_h1:
@@ -449,12 +477,15 @@ if len(df_history) > 0:
         with col_h2:
             if st.button("🧠 ② 直したぜんぶのデータでAIさんをそだてる"):
                 try:
-                    # 1. 過去データ全体を「最新の正解」として学習用CSVを丸ごと上書き
+                    # 🌟 過去データ全体をスプレッドシートの「train_data」シートに丸ごと上書き保存！
                     new_train_from_hist = edited_history_df[['item', 'amount', 'カテゴリ']].copy()
                     new_train_from_hist.columns = ["item", "amount", "category"]
-                    new_train_from_hist.to_csv(TRAIN_DATA_FILE, index=False)
                     
-                    # 2. AIさんに一から覚え直させる（再学習）
+                    worksheet_train.clear()
+                    worksheet_train.append_row(["item", "amount", "category"])
+                    worksheet_train.append_rows(new_train_from_hist.values.tolist())
+                    
+                    # AIさんに一から覚え直させる
                     vec_hist = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
                     X_text_hist = vec_hist.fit_transform(new_train_from_hist["item"])
                     X_text_hist_df = pd.DataFrame(X_text_hist.toarray())
@@ -466,14 +497,13 @@ if len(df_history) > 0:
                     model_hist = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
                     model_hist.fit(X_train_hist, y_train_hist)
                     
-                    # 3. 賢くなったAIの脳みそを保存
                     with open("model.pkl", "wb") as f:
                         pickle.dump(model_hist, f)
                     with open("vectorizer.pkl", "wb") as f:
                         pickle.dump(vec_hist, f)
                         
                     play_sound("success")
-                    st.success(f"🌟 かこのデータ（ぜんぶで {len(new_train_from_hist)} こ）をパーフェクトにおぼえなおしたよ！ももちゃんのおかげでAIさんが超かしこくなった！")
+                    st.success(f"🌟 かこのデータ（ぜんぶで {len(new_train_from_hist)} こ）をスプレッドシートに保存してパーフェクトにおぼえなおしたよ！")
                 except Exception as e:
                     st.error(f"AIのおべんきょう中にエラーが出ちゃった: {e}")
 else:
