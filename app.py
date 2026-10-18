@@ -382,8 +382,8 @@ if len(df_history) > 0:
     with tab4:
         st.write("### 📝 まえにしまったきろくを直すよ")
         
+        # --- 既存カテゴリ一覧を取得（候補として使う） ---
         base_categories_history = get_all_existing_categories()
-        select_options_history = base_categories_history + ["➕ 新しいなまえをじゆうに作る"]
         
         df_history_editable = df_history[['date', 'item', 'amount']].copy()
         cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
@@ -393,11 +393,11 @@ if len(df_history) > 0:
         edited_history_df = st.data_editor(
             df_history_editable,
             column_config={
-                "カテゴリ": st.column_config.SelectboxColumn(
+                "カテゴリ": st.column_config.TextColumn(
                     "えらんでね",
-                    help="ここからえらぶか、新しく作れるよ",
-                    options=select_options_history,
-                    required=True,
+                    help="ダブルクリックで文字を自由に書き換えられます。今までのグループ名から選ぶこともできるよ！",
+                    validate=None,
+                    max_chars=50,
                 )
             },
             hide_index=True,
@@ -405,6 +405,7 @@ if len(df_history) > 0:
             num_rows="dynamic"
         )
         
+        # 「➕ 新しいなまえをじゆうに作る」を選んだ時の黄色い箱（確実な代替案UI）
         new_cat_history_mask = edited_history_df["カテゴリ"] == "➕ 新しいなまえをじゆうに作る"
         if new_cat_history_mask.any():
             st.warning("⚠️ 新しいなまえを書くばこが出たよ！")
@@ -413,20 +414,55 @@ if len(df_history) > 0:
                 edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
                 st.success(f"🍀 「{custom_history_input}」になおしたよ、ももちゃん！")
         
-        if st.button("💾 ほうせきばこを新しく上書きするよ"):
-            try:
-                worksheet.clear()
-                header = ["date", "item", "amount", "category"]
-                worksheet.append_row(header)
-                
-                df_to_overwrite = edited_history_df[['date', 'item', 'amount', 'カテゴリ']].copy()
-                df_to_overwrite.columns = ["date", "item", "amount", "category"]
-                
-                worksheet.append_rows(df_to_overwrite.values.tolist())
-                play_sound("success")
-                st.success("✨ ぜんぶきれいに上書きできたよ！ページをぬりなおしてね（再読み込み）！")
-            except Exception as e:
-                st.error(f"あれれ、エラーが出ちゃった: {e}")
+        # 🌟 ここから変更：ボタンを2つに分けて、AIの再学習機能をドッキング！
+        col_h1, col_h2 = st.columns(2)
+        
+        with col_h1:
+            if st.button("💾 ① ほうせきばこを新しく上書きする"):
+                try:
+                    worksheet.clear()
+                    header = ["date", "item", "amount", "category"]
+                    worksheet.append_row(header)
+                    
+                    df_to_overwrite = edited_history_df[['date', 'item', 'amount', 'カテゴリ']].copy()
+                    df_to_overwrite.columns = ["date", "item", "amount", "category"]
+                    
+                    worksheet.append_rows(df_to_overwrite.values.tolist())
+                    play_sound("success")
+                    st.success("✨ ぜんぶきれいに上書きできたよ！ページをぬりなおしてね（再読み込み）！")
+                except Exception as e:
+                    st.error(f"あれれ、エラーが出ちゃった: {e}")
+
+        with col_h2:
+            if st.button("🧠 ② 直したぜんぶのデータでAIさんをそだてる"):
+                try:
+                    # 1. 過去データ全体を「最新の正解」として学習用CSVを丸ごと上書き
+                    new_train_from_hist = edited_history_df[['item', 'amount', 'カテゴリ']].copy()
+                    new_train_from_hist.columns = ["item", "amount", "category"]
+                    new_train_from_hist.to_csv(TRAIN_DATA_FILE, index=False)
+                    
+                    # 2. AIさんに一から覚え直させる（再学習）
+                    vec_hist = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+                    X_text_hist = vec_hist.fit_transform(new_train_from_hist["item"])
+                    X_text_hist_df = pd.DataFrame(X_text_hist.toarray())
+                    X_text_hist_df.columns = ["feat_" + str(i) for i in range(X_text_hist_df.shape[1])]
+                    
+                    X_train_hist = pd.concat([X_text_hist_df, new_train_from_hist[["amount"]]], axis=1)
+                    y_train_hist = new_train_from_hist["category"]
+                    
+                    model_hist = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
+                    model_hist.fit(X_train_hist, y_train_hist)
+                    
+                    # 3. 賢くなったAIの脳みそを保存
+                    with open("model.pkl", "wb") as f:
+                        pickle.dump(model_hist, f)
+                    with open("vectorizer.pkl", "wb") as f:
+                        pickle.dump(vec_hist, f)
+                        
+                    play_sound("success")
+                    st.success(f"🌟 かこのデータ（ぜんぶで {len(new_train_from_hist)} こ）をパーフェクトにおぼえなおしたよ！ももちゃんのおかげでAIさんが超かしこくなった！")
+                except Exception as e:
+                    st.error(f"AIのおべんきょう中にエラーが出ちゃった: {e}")
 
 else:
     st.info("まだ何もきろくがないよ！上のボタンからファイルをポンと入れてね！")
