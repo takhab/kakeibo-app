@@ -374,7 +374,7 @@ if len(df_history) > 0:
         
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            st.dataframe(monthly_summary, use_container_width=True)
+            st.dataframe(monthly_summary, use_container_width=True, hide_index=True)
         with col_m2:
             st.write(f"**{selected_year}ねん の かたち**")
             fig = px.bar(monthly_summary, x='年月', y='合計金額 (円)', 
@@ -401,7 +401,7 @@ if len(df_history) > 0:
             col_c1, col_c2 = st.columns(2)
             with col_c1:
                 st.write(f"**{selected_month} の なかみ**")
-                st.dataframe(cat_month_sum, use_container_width=True)
+                st.dataframe(cat_month_sum, use_container_width=True, hide_index=True)
             with col_c2:
                 fig_pie_month = px.pie(cat_month_sum, values='金額 (円)', names='グループ', hole=0.4,
                                        color_discrete_sequence=px.colors.qualitative.Pastel)
