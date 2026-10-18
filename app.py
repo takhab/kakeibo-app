@@ -179,7 +179,7 @@ def get_all_existing_categories():
 
 with st.expander("🛠️ AIをそだてる（管理メニュー）"):
     st.write("ももちゃんが直したデータを元にして、AIさんをもっとかしこくするよ！")
-    df_current_train = get_train_data()
+    df_current_train = get_train_data().reset_index(drop=True)
     if not df_current_train.empty:
         st.info(f"いまおぼえている弱点克服データ: **{len(df_current_train)} まい**")
     else:
@@ -448,7 +448,7 @@ if len(df_history) > 0:
                         
                         # 今までの教科書（train_data）に、今回の差分を追加！
                         df_old_train = get_train_data()
-                        df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates()
+                        df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates().reset_index(drop=True)
                         
                         # train_dataを更新
                         worksheet_train.clear()
