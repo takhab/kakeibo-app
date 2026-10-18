@@ -382,22 +382,24 @@ if len(df_history) > 0:
     with tab4:
         st.write("### 📝 まえにしまったきろくを直すよ")
         
-        # --- 既存カテゴリ一覧を取得（候補として使う） ---
+        # --- 既存カテゴリ一覧を取得して、新しい名前を作る選択肢を追加 ---
         base_categories_history = get_all_existing_categories()
+        select_options_history = base_categories_history + ["➕ 新しいなまえをじゆうに作る"]
         
         df_history_editable = df_history[['date', 'item', 'amount']].copy()
         cat_col_target = 'category' if 'category' in df_history.columns else ('AI予測カテゴリ' if 'AI予測カテゴリ' in df_history.columns else df_history.columns[-1])
         df_history_editable['カテゴリ'] = df_history[cat_col_target]
         df_history_editable['date'] = df_history_editable['date'].dt.strftime('%Y-%m-%d')
         
+        # 🌟 ここを SelectboxColumn（プルダウン）に戻しました！
         edited_history_df = st.data_editor(
             df_history_editable,
             column_config={
-                "カテゴリ": st.column_config.TextColumn(
+                "カテゴリ": st.column_config.SelectboxColumn(
                     "えらんでね",
-                    help="ダブルクリックで文字を自由に書き換えられます。今までのグループ名から選ぶこともできるよ！",
-                    validate=None,
-                    max_chars=50,
+                    help="ここからえらぶか、新しく作れるよ",
+                    options=select_options_history,
+                    required=True,
                 )
             },
             hide_index=True,
@@ -405,7 +407,7 @@ if len(df_history) > 0:
             num_rows="dynamic"
         )
         
-        # 「➕ 新しいなまえをじゆうに作る」を選んだ時の黄色い箱（確実な代替案UI）
+        # 「➕ 新しいなまえをじゆうに作る」を選んだ時の黄色い箱
         new_cat_history_mask = edited_history_df["カテゴリ"] == "➕ 新しいなまえをじゆうに作る"
         if new_cat_history_mask.any():
             st.warning("⚠️ 新しいなまえを書くばこが出たよ！")
@@ -414,7 +416,7 @@ if len(df_history) > 0:
                 edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
                 st.success(f"🍀 「{custom_history_input}」になおしたよ、ももちゃん！")
         
-        # 🌟 ここから変更：ボタンを2つに分けて、AIの再学習機能をドッキング！
+        # 🌟 ほうせきばこ上書き ＆ AI再学習ボタン
         col_h1, col_h2 = st.columns(2)
         
         with col_h1:
@@ -463,6 +465,5 @@ if len(df_history) > 0:
                     st.success(f"🌟 かこのデータ（ぜんぶで {len(new_train_from_hist)} こ）をパーフェクトにおぼえなおしたよ！ももちゃんのおかげでAIさんが超かしこくなった！")
                 except Exception as e:
                     st.error(f"AIのおべんきょう中にエラーが出ちゃった: {e}")
-
 else:
     st.info("まだ何もきろくがないよ！上のボタンからファイルをポンと入れてね！")
