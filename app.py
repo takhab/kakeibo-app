@@ -260,7 +260,7 @@ if uploaded_files:
                     st.success(f"🍀 「{custom_input}」にぜんぶ書き換えたよ、ももちゃん！")
 
             col_btn1, col_btn2 = st.columns(2)
-            
+
             with col_btn1:
                 if st.button("💾 ① ほうせきばこ（スプレッドシート）にしまう"):
                     df_to_save = edited_df[["date", "item", "amount", "AI予測カテゴリ"]].copy()
@@ -277,35 +277,46 @@ if uploaded_files:
 
             with col_btn2:
                 if st.button("🧠 ② AIさんに「これが正解だよ」とおしえてあげる"):
-                    new_training_data = edited_df[["item", "amount", "AI予測カテゴリ"]].copy()
-                    new_training_data.columns = ["item", "amount", "category"]
                     
-                    if os.path.exists(TRAIN_DATA_FILE):
-                        df_old_train = pd.read_csv(TRAIN_DATA_FILE)
-                        df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates()
+                    # 🌟 ここが賢いポイント！AIの予想と、ももちゃんの修正結果を見比べる
+                    changed_mask = df["AI予測カテゴリ"] != edited_df["AI予測カテゴリ"]
+                    corrected_df = edited_df[changed_mask] # ももちゃんが手動で直したデータだけを抽出！
+                    
+                    if len(corrected_df) == 0:
+                        # 全部正解だった場合はお勉強をスキップ
+                        st.info("🌟 AIさんの予想は全部大正解だったみたい！新しくお勉強することはないから、スキップするね！")
+                    
                     else:
-                        df_combined = new_training_data
+                        # 直したデータだけを抽出して教科書に追加
+                        new_training_data = corrected_df[["item", "amount", "AI予測カテゴリ"]].copy()
+                        new_training_data.columns = ["item", "amount", "category"]
                         
-                    df_combined.to_csv(TRAIN_DATA_FILE, index=False)
-                    
-                    vec_new = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
-                    X_text_new = vec_new.fit_transform(df_combined["item"])
-                    X_text_new_df = pd.DataFrame(X_text_new.toarray())
-                    X_text_new_df.columns = ["feat_" + str(i) for i in range(X_text_new_df.shape[1])]
-                    X_train_final = pd.concat([X_text_new_df, df_combined[["amount"]]], axis=1)
-                    y_train_final = df_combined["category"]
-                    
-                    model_new = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
-                    model_new.fit(X_train_final, y_train_final)
-                    
-                    with open("model.pkl", "wb") as f:
-                        pickle.dump(model_new, f)
-                    with open("vectorizer.pkl", "wb") as f:
-                        pickle.dump(vec_new, f)
+                        df_old_train = get_train_data()
+                        # 元の教科書に、直したデータだけを合体（追加）させる
+                        df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates()
                         
-                    play_sound("success")
-                    st.success(f"🌟 おしえてくれてありがとう、ももちゃん！AIさんがまたかしこくなったよ！（合計: {len(df_combined)} このおべんきょう）")
-
+                        # 学習用スプレッドシートに追記保存する
+                        worksheet_train.clear()
+                        worksheet_train.append_row(["item", "amount", "category"])
+                        worksheet_train.append_rows(df_combined.values.tolist())
+                        
+                        vec_new = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+                        X_text_new = vec_new.fit_transform(df_combined["item"])
+                        X_text_new_df = pd.DataFrame(X_text_new.toarray())
+                        X_text_new_df.columns = ["feat_" + str(i) for i in range(X_text_new_df.shape[1])]
+                        X_train_final = pd.concat([X_text_new_df, df_combined[["amount"]]], axis=1)
+                        y_train_final = df_combined["category"]
+                        
+                        model_new = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
+                        model_new.fit(X_train_final, y_train_final)
+                        
+                        with open("model.pkl", "wb") as f:
+                            pickle.dump(model_new, f)
+                        with open("vectorizer.pkl", "wb") as f:
+                            pickle.dump(vec_new, f)
+                            
+                        play_sound("success")
+                        st.success(f"🌟 おしえてくれてありがとう、ももちゃん！間違えちゃった {len(corrected_df)} このデータを新しくおべんきょうしたよ！")
 st.write("---")
 st.write("## 🌈 ももちゃんのまいにち・きろく おおぞらひろば")
 
