@@ -85,11 +85,9 @@ def play_sound(sound_type):
         components.html(sound_code, height=0)
 
 # ====== 🔒 パスワード認証の仕組み（Cookieで30日間記憶！） ======
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
 
-cookie_manager = get_cookie_manager()
+# キャッシュ化（@st.cache_resource）を外して、直接呼び出します！
+cookie_manager = stx.CookieManager()
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
