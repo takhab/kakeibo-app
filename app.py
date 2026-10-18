@@ -386,8 +386,8 @@ if len(df_history) > 0:
 
     # 🌟 変更点2: タブ4を「差分だけを抽出してAIを育てるアクティブラーニング特化」に改修！
     with tab4:
-        st.write("### 📝 まえにしまったきろくを直すよ（ここがAIの勉強部屋！）")
-        st.info("AIの予想が間違っていたら、ここで正しいカテゴリに直してね。**「直したレコードだけ」がAIの教科書（train_data）に送られて、AIが新しく学習するよ！**")
+        st.write("### 📝 かこのでーたを直す（AIの一斉おそうじ！）")
+        st.info("同じお店のデータがたくさん間違っている時、**1つだけ直して下のボタンを押せば、AIが新しく学習して残りのデータもぜんぶ自動で直してくれるよ！**")
         
         base_categories_history = get_all_existing_categories()
         select_options_history = base_categories_history + ["➕ 新しいなまえをじゆうに作る"]
@@ -415,66 +415,68 @@ if len(df_history) > 0:
             if custom_history_input:
                 edited_history_df.loc[new_cat_history_mask, "カテゴリ"] = custom_history_input
         
-        col_h1, col_h2 = st.columns(2)
-        
-        with col_h1:
-            if st.button("💾 ① 実績データを新しく上書きする（履歴の修正）"):
-                try:
+        # 🌟 2つのボタンを統合！「学習 ＋ 全件再分類 ＋ 実績DB上書き」をワンアクションで！
+        if st.button("✨ 🧠 直した内容をAIに教えて、過去のデータもぜんぶ自動で分類し直す！"):
+            try:
+                # 1. ユーザーが変更した行（差分）を抽出
+                changed_mask = df_history_editable["カテゴリ"] != edited_history_df["カテゴリ"]
+                corrected_df = edited_history_df[changed_mask]
+                
+                if len(corrected_df) == 0:
+                    st.warning("💡 どこも直っていないみたい！カテゴリを直してからボタンを押してね。")
+                else:
+                    # 2. 変更された行だけを train_data に追加
+                    new_training_data = corrected_df[['item', 'amount', 'カテゴリ']].copy()
+                    new_training_data.columns = ["item", "amount", "category"]
+                    
+                    df_old_train = get_train_data()
+                    df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates().reset_index(drop=True)
+                    
+                    worksheet_train.clear()
+                    worksheet_train.append_row(["item", "amount", "category"])
+                    worksheet_train.append_rows(df_combined.values.tolist())
+                    
+                    # 3. AIの再学習
+                    vec_hist = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+                    X_text_hist = vec_hist.fit_transform(df_combined["item"])
+                    X_text_hist_df = pd.DataFrame(X_text_hist.toarray())
+                    X_text_hist_df.columns = ["feat_" + str(i) for i in range(X_text_hist_df.shape[1])]
+                    X_train_hist = pd.concat([X_text_hist_df, df_combined[["amount"]]], axis=1)
+                    y_train_hist = df_combined["category"]
+                    
+                    model_hist = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
+                    model_hist.fit(X_train_hist, y_train_hist)
+                    
+                    with open("model.pkl", "wb") as f:
+                        pickle.dump(model_hist, f)
+                    with open("vectorizer.pkl", "wb") as f:
+                        pickle.dump(vec_hist, f)
+                        
+                    # 4. 🌟 新しく賢くなったAIを使って、過去の全実績データを再分類（これがやりたかったこと！）
+                    items_clean = df_history['item'].fillna("不明").astype(str)
+                    amounts_clean = df_history['amount'].fillna(0).astype(int)
+                    
+                    X_text_all = vec_hist.transform(items_clean)
+                    X_text_all_df = pd.DataFrame(X_text_all.toarray())
+                    X_text_all_df.columns = ["feat_" + str(i) for i in range(X_text_all_df.shape[1])]
+                    X_all = pd.concat([X_text_all_df, amounts_clean], axis=1)
+                    
+                    # AIによる全件再予測！
+                    new_predictions = model_hist.predict(X_all)
+                    
+                    # 保存用のデータフレームを作成
+                    df_to_save = df_history[['date', 'item', 'amount']].copy()
+                    df_to_save['date'] = df_to_save['date'].dt.strftime('%Y-%m-%d')
+                    df_to_save['category'] = new_predictions
+                    
+                    # 5. 実績DB（sheet1）を丸ごと新しい分類結果で上書き
                     worksheet.clear()
-                    header = ["date", "item", "amount", "category"]
-                    worksheet.append_row(header)
+                    worksheet.append_row(["date", "item", "amount", "category"])
+                    worksheet.append_rows(df_to_save.values.tolist())
                     
-                    df_to_overwrite = edited_history_df[['date', 'item', 'amount', 'カテゴリ']].copy()
-                    df_to_overwrite.columns = ["date", "item", "amount", "category"]
-                    worksheet.append_rows(df_to_overwrite.values.tolist())
                     play_sound("success")
-                    st.success("✨ 実績データがきれいに上書きできたよ！ページをぬりなおしてね（再読み込み）！")
-                except Exception as e:
-                    st.error(f"あれれ、エラーが出ちゃった: {e}")
-
-        with col_h2:
-            if st.button("🧠 ② 直したデータ（差分）だけをAIの教科書に追加して教える"):
-                try:
-                    # 🌟 ユーザーが「変更した行」だけをピンポイントで抽出する
-                    changed_mask = df_history_editable["カテゴリ"] != edited_history_df["カテゴリ"]
-                    corrected_df = edited_history_df[changed_mask]
-                    
-                    if len(corrected_df) == 0:
-                        st.info("💡 変更されたデータはないみたい！直したところだけをお勉強するよ。")
-                    else:
-                        # 変更された行だけを抽出
-                        new_training_data = corrected_df[['item', 'amount', 'カテゴリ']].copy()
-                        new_training_data.columns = ["item", "amount", "category"]
-                        
-                        # 今までの教科書（train_data）に、今回の差分を追加！
-                        df_old_train = get_train_data()
-                        df_combined = pd.concat([df_old_train, new_training_data], ignore_index=True).drop_duplicates().reset_index(drop=True)
-                        
-                        # train_dataを更新
-                        worksheet_train.clear()
-                        worksheet_train.append_row(["item", "amount", "category"])
-                        worksheet_train.append_rows(df_combined.values.tolist())
-                        
-                        # 追加された新しい教科書で、AIに覚え直させる（再学習ループ）
-                        vec_hist = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
-                        X_text_hist = vec_hist.fit_transform(df_combined["item"])
-                        X_text_hist_df = pd.DataFrame(X_text_hist.toarray())
-                        X_text_hist_df.columns = ["feat_" + str(i) for i in range(X_text_hist_df.shape[1])]
-                        
-                        X_train_hist = pd.concat([X_text_hist_df, df_combined[["amount"]]], axis=1)
-                        y_train_hist = df_combined["category"]
-                        
-                        model_hist = lgb.LGBMClassifier(random_state=42, min_child_samples=2)
-                        model_hist.fit(X_train_hist, y_train_hist)
-                        
-                        with open("model.pkl", "wb") as f:
-                            pickle.dump(model_hist, f)
-                        with open("vectorizer.pkl", "wb") as f:
-                            pickle.dump(vec_hist, f)
-                            
-                        play_sound("success")
-                        st.success(f"🌟 ももちゃんが直してくれた「{len(corrected_df)}件」のデータを弱点ノートに追加して、AIさんが再学習したよ！")
-                except Exception as e:
-                    st.error(f"AIのおべんきょう中にエラーが出ちゃった: {e}")
+                    st.success(f"🌟 すごい！ももちゃんが直した「{len(corrected_df)}件」の弱点をお勉強して、過去の全データ（{len(df_to_save)}件）を新しいAIさんが自動で分類し直したよ！ページを再読み込みしてみてね！")
+            except Exception as e:
+                st.error(f"エラーが出ちゃった: {e}")
 else:
     st.info("まだ何もきろくがないよ！上のボタンからファイルをポンと入れてね！")
